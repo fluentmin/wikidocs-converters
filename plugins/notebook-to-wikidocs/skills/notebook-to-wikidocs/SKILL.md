@@ -23,8 +23,12 @@ disable-model-invocation: true
   실행 결과가 없으면 코드만 두고 `<!-- 실행 결과 없음 -->` 주석으로 누락을 드러낸다.
 - 같은 `.md` 가 **웹(WikiDocs)·PDF·EPUB 세 타깃** 어디서도 깨지지 않게 한다(서점 판매엔 EPUB 필수).
 
-스크립트는 `scripts/`, 분할/라벨/제목 설정 예시는 `config/` 에 있다.
-경로는 `${CLAUDE_PLUGIN_ROOT}` 또는 이 스킬 폴더 기준으로 잡는다.
+**스크립트 위치(중요)**: 스킬 실행 시 작업 디렉터리는 **사용자 프로젝트**다(플러그인 폴더가 아님).
+번들된 스크립트·설정은 플러그인 설치 경로를 가리키는 환경변수 `${CLAUDE_PLUGIN_ROOT}` 로 잡는다.
+아래 명령에서 편의상 다음을 먼저 둔다(이 변수가 비어 있으면 이 SKILL.md 가 있는 폴더로 대체):
+```bash
+SK="${CLAUDE_PLUGIN_ROOT:-.}/skills/notebook-to-wikidocs"   # scripts/ · config/ 가 이 아래
+```
 
 ## 파이프라인
 
@@ -44,7 +48,7 @@ disable-model-invocation: true
   uv tool install "git+https://github.com/googlecolab/google-colab-cli"
   colab --auth=oauth2 whoami       # 동의 화면 "모두 선택". 과금 방지로 결제수단 없는 무료 계정 권장.
 
-  bash scripts/run_via_cli.sh --root <프로젝트>   # 인자 없으면 전부, '7 24' 처럼 일부도
+  bash "$SK/scripts/run_via_cli.sh" --root <프로젝트>   # 인자 없으면 전부, '7 24' 처럼 일부도
   ```
   REPO 는 git origin 에서 자동 인식(VM 은 clone 만). `executed/<이름>.ipynb` 가 로컬에 쌓인다.
 - **로컬 실행(CPU 노트북)** — GPU가 필요 없으면 변환 시 `--execute --save-executed` 로 nbclient 직접 실행.
@@ -56,9 +60,9 @@ disable-model-invocation: true
 ### ② 변환 — `scripts/build_wikidocs.py`
 
 ```bash
-python3 scripts/build_wikidocs.py path/to/notebook.ipynb --root <프로젝트>
-python3 scripts/build_wikidocs.py 7 24 --root <프로젝트>           # executed/<이름>.ipynb 자동 사용
-python3 scripts/build_wikidocs.py --all --root <프로젝트>          # 전체 (사용자 확인 후)
+python3 "$SK/scripts/build_wikidocs.py" path/to/notebook.ipynb --root <프로젝트>
+python3 "$SK/scripts/build_wikidocs.py" 7 24 --root <프로젝트>           # executed/<이름>.ipynb 자동 사용
+python3 "$SK/scripts/build_wikidocs.py" --all --root <프로젝트>          # 전체 (사용자 확인 후)
 ```
 
 **출력 원천 우선순위**(노트북별 자동): `--executed-notebook` > `executed/<이름>.ipynb` > `--execute` > (없음).
@@ -66,7 +70,7 @@ python3 scripts/build_wikidocs.py --all --root <프로젝트>          # 전체 
 **분할(장→절)** — 기본은 단순화돼 있다:
 - `--split single` **(기본)**: 노트북 1개 = 페이지 1개. 설정·의존성 없이 동작.
 - `--split sections`: `--config` 의 `section_rules`/`subpages` 로 한 장을 여러 절(실습/해부/변형/정리 등)로
-  나눈다. 한글 커리큘럼 예시는 `config/neuqes-101.json` 참고 — 자기 키워드·라벨로 복사해 쓴다.
+  나눈다. 한글 커리큘럼 예시는 `$SK/config/neuqes-101.json` 참고 — 자기 키워드·라벨로 복사해 쓴다.
 
 **전자책 안전 출력**(자동) — [wikidocs 전자책 작성시 주의할 점](https://wikidocs.net/198723) 기준:
 출력 스타일 `code`(웹·PDF·EPUB 모두 안전), 헤딩 위아래 빈 줄, 수평선 제거, 본문 H1→H2 강등,
@@ -79,7 +83,7 @@ EPUB 긴 산문 줄 트렁케이트(표는 보존). 트렁케이트 제외는 `-
 ### ③ 검증 — `scripts/check_wikidocs_md.py`
 
 ```bash
-python3 scripts/check_wikidocs_md.py --root <프로젝트>   # pages/*.md 전수 검사. 위반 시 종료코드 1
+python3 "$SK/scripts/check_wikidocs_md.py" --root <프로젝트>   # pages/*.md 전수 검사. 위반 시 종료코드 1
 ```
 
 변환기가 자동 방어하지만, **회귀·수기 편집**을 잡는 독립 린터다(코드펜스 안 제외).
