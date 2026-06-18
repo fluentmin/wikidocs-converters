@@ -1,0 +1,20 @@
+{
+  "name": "wikidocs-tools",
+  "owner": {
+    "name": "ChangMin Yoo",
+    "email": "fluentmin@gmail.com"
+  },
+  "metadata": {
+    "description": "Jupyter 노트북을 WikiDocs용(웹·PDF·EPUB 안전) 마크다운으로 변환하는 도구 모음",
+    "pluginRoot": "./plugins"
+  },
+  "plugins": [
+    {
+      "name": "notebook-to-wikidocs",
+      "source": "./notebook-to-wikidocs",
+      "description": "노트북(.ipynb)의 실제 실행 결과까지 담아 WikiDocs 장→절 마크다운으로 변환. 실행본이 없으면 colab-cli로 실행해 결과를 확보한다.",
+      "version": "0.1.0",
+      "author": { "name": "ChangMin Yoo", "email": "fluentmin@gmail.com" }
+    }
+  ]
+}
