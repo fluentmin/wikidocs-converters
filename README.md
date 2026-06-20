@@ -1,22 +1,24 @@
-# wikidocs-tools — Claude Code 플러그인 마켓플레이스
+# wikidocs-converters — Claude Code 플러그인 마켓플레이스
 
-Jupyter 노트북(.ipynb)을 **WikiDocs용 마크다운**으로 변환하는 도구 모음입니다.
-단순 파싱이 아니라 **코드의 실제 실행 결과(표·로그·그림)까지** 싣고, 같은 `.md` 가
-**웹(WikiDocs)·PDF·EPUB(전자책)** 어디서도 깨지지 않게 만듭니다.
+여러 포맷의 문서를 **WikiDocs용 마크다운**으로 변환하는 플러그인 모음입니다. 같은 `.md` 가
+**웹(WikiDocs)·PDF·EPUB(전자책)** 어디서도 깨지지 않게 만드는 것이 공통 목표입니다.
+
+- **현재 지원**: Jupyter 노트북(.ipynb) — 단순 파싱이 아니라 **코드의 실제 실행 결과(표·로그·그림)까지** 싣습니다.
+- **향후 계획**: docx · pdf · pptx · md 등 포맷별 플러그인을 같은 마켓플레이스에 추가합니다.
 
 ## 설치
 
 ```
-/plugin marketplace add fluentmin/notebook-to-wikidocs-marketplace
-/plugin install notebook-to-wikidocs@wikidocs-tools
+/plugin marketplace add fluentmin/wikidocs-converters
+/plugin install notebook-to-wikidocs@wikidocs-converters
 ```
 
 (아직 GitHub에 푸시 전이라면 로컬 경로로도 추가할 수 있습니다:
-`/plugin marketplace add /path/to/notebook-to-wikidocs-marketplace`)
+`/plugin marketplace add /path/to/wikidocs-converters`)
 
 ## 들어 있는 플러그인
 
-### `notebook-to-wikidocs`
+### `notebook-to-wikidocs` — Jupyter 노트북 변환기
 
 스킬 하나(`/notebook-to-wikidocs`)와 스크립트 4종:
 

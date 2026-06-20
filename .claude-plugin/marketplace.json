@@ -1,11 +1,11 @@
 {
-  "name": "wikidocs-tools",
+  "name": "wikidocs-converters",
   "owner": {
     "name": "ChangMin Yoo",
     "email": "fluentmin@gmail.com"
   },
   "metadata": {
-    "description": "Jupyter 노트북을 WikiDocs용(웹·PDF·EPUB 안전) 마크다운으로 변환하는 도구 모음",
+    "description": "여러 포맷의 문서를 WikiDocs용(웹·PDF·EPUB 안전) 마크다운으로 변환하는 플러그인 모음. 현재 Jupyter 노트북 지원, 향후 docx·pdf·pptx 등 포맷별 플러그인을 추가한다.",
     "pluginRoot": "./plugins"
   },
   "plugins": [
