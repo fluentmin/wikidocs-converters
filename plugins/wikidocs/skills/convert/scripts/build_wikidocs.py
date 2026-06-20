@@ -755,9 +755,39 @@ def convert(nb: dict, num: int | None, name: str, slug: str, title: str,
 # --------------------------------------------------------------------------- #
 # TOC
 # --------------------------------------------------------------------------- #
+TOC_LINK_RE = re.compile(r"^\s*[*-]\s*\[[^\]]*\]\(([^)]+)\)\s*$")
+
+
+def _prune_dead_toc_links(lines: list[str], toc_dir: Path) -> tuple[list[str], list[str]]:
+    """TOC 리스트 항목 중 '없는 로컬 .md 페이지' 를 가리키는 줄을 제거한다.
+
+    외부 URL(`://`)·앵커(`#…`)·`.md` 가 아닌 링크는 그대로 둔다. (kept_lines, removed_targets) 반환.
+    """
+    kept: list[str] = []
+    removed: list[str] = []
+    for ln in lines:
+        m = TOC_LINK_RE.match(ln)
+        if m:
+            target = m.group(1).strip()
+            path_part = target.split("#", 1)[0]
+            is_local_md = (
+                path_part.endswith(".md")
+                and "://" not in target
+                and not target.startswith("#")
+            )
+            if is_local_md and not (toc_dir / path_part).exists():
+                removed.append(path_part)
+                continue
+        kept.append(ln)
+    return kept, removed
+
+
 def upsert_toc(toc_path: Path, book_title: str, num: int | None, name: str,
                entries: list[tuple[str, str]]) -> None:
-    """TOC.md 에서 이 항목 블록만 교체/추가. 번호가 있으면 NN. / NN-N. 블록을 키로 쓴다."""
+    """TOC.md 에서 이 항목 블록만 교체/추가. 번호가 있으면 NN. / NN-N. 블록을 키로 쓴다.
+
+    더불어 없는 로컬 `.md` 페이지를 가리키는 죽은 링크 줄은 정리한다.
+    """
     new_lines = []
     for title, path in entries:
         indent = "" if (num is None or re.match(r"^\d+\.\s", title)) else "  "
@@ -782,6 +812,9 @@ def upsert_toc(toc_path: Path, book_title: str, num: int | None, name: str,
             while end < len(lines) and (lines[end].startswith("  ") or lines[end].strip() == ""):
                 end += 1
             out = lines[:idx] + new_lines + lines[end:]
+        out, removed = _prune_dead_toc_links(out, toc_path.parent)
+        if removed:
+            print(f"     TOC 정리: 없는 페이지 링크 {len(removed)}건 제거 ({', '.join(removed)})")
         toc_path.write_text("\n".join(out).rstrip("\n") + "\n", encoding="utf-8")
         return
 
@@ -804,6 +837,9 @@ def upsert_toc(toc_path: Path, book_title: str, num: int | None, name: str,
         out = lines[:insert_at] + new_lines + lines[insert_at:]
     else:
         out = lines[:start] + new_lines + lines[end + 1:]
+    out, removed = _prune_dead_toc_links(out, toc_path.parent)
+    if removed:
+        print(f"     TOC 정리: 없는 페이지 링크 {len(removed)}건 제거 ({', '.join(removed)})")
     toc_path.write_text("\n".join(out).rstrip("\n") + "\n", encoding="utf-8")
 
 
