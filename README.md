@@ -31,9 +31,9 @@ claude # Claude Code CLI에서 아래 명령어 실행
 | `scripts/run_via_cli.sh` | google-colab-cli 로 실행본(`<이름>_executed.ipynb`) 자동 생성(macOS/Linux) |
 | `scripts/colab_cli_exec.py` | 위 러너가 Colab VM 에서 돌리는 실행기 |
 
-**기본 동작은 노트북 1개 = 페이지 1개(`--split single`)** 로 의존성 없이 돕니다.
-한 장을 여러 절로 쪼개려면 `--split sections` 를 씁니다 — **노트북의 `## `(H2) 헤딩을
-절 경계로 자동 분할**합니다(아래 예시 2).
+**기본 동작은 노트북 1개 = 페이지 1개** 로 의존성 없이 돕니다.
+한 장을 여러 절로 쪼개려면 **`--split` 플래그**만 붙이면 됩니다(값 없이 `--split` = `--split sections`) —
+**노트북의 `## `(H2) 헤딩을 절 경계로 자동 분할**합니다(아래 예시 2).
 
 ## 사용 예시 — 실제 노트북에 적용
 
@@ -79,14 +79,15 @@ claude # Claude Code CLI에서 아래 명령어 실행
 내용이 긴 "한 챕터" 노트북을 여러 절로 나눠 출판할 때 — **설정 파일 없이** 동작합니다:
 
 ```
-/wikidocs:convert report.ipynb --split sections
+/wikidocs:convert report.ipynb --split
 ```
 
+- `--split` 만 붙이면 분할이 켜집니다(값 없이 `--split` = `--split sections`).
 - 분할 기준은 **노트북 안의 `## `(H2) 헤딩**입니다. 
   노트북에 적어둔 헤딩 구조를 그대로 따릅니다(한글·영문 무관).
   - H1 제목과 첫 H2 이전 내용 → **개요 페이지**(`report.md`) + 자동 생성된 "이 장의 구성" 로드맵
   - 각 `## ` 헤딩 → 문서 순서대로 `report-1.md`, `report-2.md`, … 서브페이지(절 제목 = 헤딩 텍스트)
-- 노트북에 `## ` 헤딩이 없으면 절로 나눌 게 없어 개요 1페이지만 생깁니다 → 이때는 `--split single` 을 쓰세요.
+- 노트북에 `## ` 헤딩이 없으면 절로 나눌 게 없어 개요 1페이지만 생깁니다 → 이때는 `--split` 을 빼고 실행하세요.
 
 > 스킬로 호출하면, 변환 전에 Claude 가 노트북의 H2 목록을 보여주고 "이대로 나눌까요, 몇 개를 한 절로
 > 묶을까요?"를 먼저 확인합니다. JSON 을 직접 작성할 필요는 없습니다.
