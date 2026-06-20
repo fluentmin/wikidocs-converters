@@ -12,7 +12,6 @@
       "name": "wikidocs",
       "source": "./plugins/wikidocs",
       "description": "/wikidocs:convert <파일> 로 파일 확장자에 맞는 변환기를 자동 선택해 WikiDocs용 마크다운 생성. 현재 노트북(.ipynb)은 실제 실행 결과까지 담아 장→절로 변환하며, 실행본이 없으면 colab-cli로 실행해 결과를 확보한다.",
-      "version": "0.1.0",
       "author": { "name": "ChangMin Yoo", "email": "fluentmin@gmail.com" }
     }
   ]
