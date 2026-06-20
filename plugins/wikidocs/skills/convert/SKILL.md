@@ -1,22 +1,41 @@
 ---
-name: notebook-to-wikidocs
-description: Jupyter 노트북(.ipynb)을 WikiDocs용 마크다운으로 변환한다. 코드와 함께 실제 실행 결과(표·로그·그림)를 싣고, 웹·PDF·EPUB(전자책) 어디서도 깨지지 않게 만든다. 실행본이 없으면 google-colab-cli로 실행해 결과를 확보한다.
-argument-hint: "[노트북] 예: notebook.ipynb · 7 · 07_bert_pipeline · --all"
+name: convert
+description: 파일 확장자에 맞는 변환기를 골라 문서를 WikiDocs용 마크다운으로 변환한다. 웹·PDF·EPUB(전자책) 어디서도 깨지지 않게 만든다. 현재 Jupyter 노트북(.ipynb)을 지원하며, 코드와 함께 실제 실행 결과(표·로그·그림)까지 싣고 실행본이 없으면 google-colab-cli로 실행해 결과를 확보한다.
+argument-hint: "<파일> 예: report.ipynb · 7 · 07_bert_pipeline · --all"
 disable-model-invocation: true
 ---
 
-# notebook → WikiDocs 변환
+# convert — 파일 → WikiDocs 변환
 
-노트북(.ipynb)을 WikiDocs 연동용 `pages/*.md` + 그림 `assets/` + 목차 `TOC.md` 로 바꾼다.
-**핵심은 단순 파싱이 아니라 코드의 실제 실행 결과까지 싣는 것**이다.
+`/wikidocs:convert <파일>` 으로 **파일 확장자를 보고 알맞은 변환기를 골라** WikiDocs 연동용
+`pages/*.md` + 그림 `assets/` + 목차 `TOC.md` 로 바꾼다.
 
-**호출**: 사용자가 **변환할 노트북을 인자로** 주며 직접 호출한다(모델 자동 호출 금지 — 과금/장시간 실행).
+**호출**: 사용자가 **변환할 파일을 인자로** 주며 직접 호출한다(모델 자동 호출 금지 — 과금/장시간 실행).
 ```
-/notebook-to-wikidocs path/to/notebook.ipynb
-/notebook-to-wikidocs 7 24                 # 번호로
-/notebook-to-wikidocs 07_bert_pipeline     # 이름/폴더명으로
-/notebook-to-wikidocs --all                # 전체 (사용자 확인 후)
+/wikidocs:convert path/to/report.ipynb
+/wikidocs:convert 7 24                 # 번호로 (노트북 규약)
+/wikidocs:convert 07_bert_pipeline     # 이름/폴더명으로
+/wikidocs:convert --all                # 전체 (사용자 확인 후)
 ```
+
+## 확장자 디스패치 (먼저 이걸로 분기)
+
+인자로 받은 파일(또는 번호/이름으로 찾은 파일)의 **확장자**를 보고 변환 경로를 정한다.
+
+| 확장자 | 처리 |
+|---|---|
+| `.ipynb` | **아래 "노트북(.ipynb) 파이프라인"** 으로 변환(현재 지원). |
+| `.docx` · `.pdf` · `.md` · `.pptx` 등 | **아직 미지원** — 변환기가 없다. 사용자에게 "현재는 `.ipynb` 만 지원합니다. 이 포맷은 추후 추가될 예정입니다"라고 알리고 멈춘다(임의 변환 시도 금지). |
+
+번호/이름(`7`, `07_bert_pipeline`)·`--all` 은 노트북 규약(`NN_slug/NN_slug.ipynb`)을 가리키므로 `.ipynb`
+경로로 본다. 확장자가 불분명하면 사용자에게 확인한다. 새 포맷을 추가할 때는 이 표에 한 줄과 그
+포맷용 파이프라인 절을 더하면 된다.
+
+---
+
+# 노트북(.ipynb) 파이프라인
+
+노트북(.ipynb)을 변환할 때의 처리다. **핵심은 단순 파싱이 아니라 코드의 실제 실행 결과까지 싣는 것**이다.
 
 **핵심 원칙**
 - 코드를 실으면 그 코드의 **실제 실행 결과**도 함께 싣는다 — 가짜 출력을 지어내지 않는다.
@@ -27,7 +46,7 @@ disable-model-invocation: true
 번들된 스크립트·설정은 플러그인 설치 경로를 가리키는 환경변수 `${CLAUDE_PLUGIN_ROOT}` 로 잡는다.
 아래 명령에서 편의상 다음을 먼저 둔다(이 변수가 비어 있으면 이 SKILL.md 가 있는 폴더로 대체):
 ```bash
-SK="${CLAUDE_PLUGIN_ROOT:-.}/skills/notebook-to-wikidocs"   # scripts/ 가 이 아래
+SK="${CLAUDE_PLUGIN_ROOT:-.}/skills/convert"   # scripts/ 가 이 아래
 ```
 
 ## 파이프라인

@@ -5,13 +5,13 @@
     "email": "fluentmin@gmail.com"
   },
   "metadata": {
-    "description": "여러 포맷의 문서를 WikiDocs용(웹·PDF·EPUB 안전) 마크다운으로 변환하는 플러그인 모음. 현재 Jupyter 노트북 지원, 향후 docx·pdf·pptx 등 포맷별 플러그인을 추가한다."
+    "description": "여러 포맷의 문서를 WikiDocs용(웹·PDF·EPUB 안전) 마크다운으로 변환한다. /wikidocs:convert <파일> 하나로 파일 확장자를 보고 알맞은 변환기로 라우팅한다. 현재 Jupyter 노트북(.ipynb) 지원, 향후 docx·pdf·md 등 포맷을 같은 스킬에 추가한다."
   },
   "plugins": [
     {
-      "name": "notebook-to-wikidocs",
-      "source": "./plugins/notebook-to-wikidocs",
-      "description": "노트북(.ipynb)의 실제 실행 결과까지 담아 WikiDocs 장→절 마크다운으로 변환. 실행본이 없으면 colab-cli로 실행해 결과를 확보한다.",
+      "name": "wikidocs",
+      "source": "./plugins/wikidocs",
+      "description": "/wikidocs:convert <파일> 로 파일 확장자에 맞는 변환기를 자동 선택해 WikiDocs용 마크다운 생성. 현재 노트북(.ipynb)은 실제 실행 결과까지 담아 장→절로 변환하며, 실행본이 없으면 colab-cli로 실행해 결과를 확보한다.",
       "version": "0.1.0",
       "author": { "name": "ChangMin Yoo", "email": "fluentmin@gmail.com" }
     }

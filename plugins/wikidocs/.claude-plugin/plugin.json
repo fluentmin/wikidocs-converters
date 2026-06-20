@@ -1,0 +1,7 @@
+{
+  "name": "wikidocs",
+  "description": "/wikidocs:convert <파일> 로 파일 확장자에 맞는 변환기를 골라 WikiDocs용 마크다운으로 변환한다. 웹·PDF·EPUB(전자책) 어디서도 깨지지 않게 만든다. 현재 Jupyter 노트북(.ipynb)은 코드와 함께 실제 실행 결과(표·로그·그림)까지 싣고, 실행본이 없으면 google-colab-cli로 실행해 결과를 확보한다. 향후 docx·pdf·md 등 포맷을 같은 스킬에 추가한다.",
+  "version": "0.1.0",
+  "author": { "name": "ChangMin Yoo", "email": "fluentmin@gmail.com" },
+  "keywords": ["wikidocs", "markdown", "ebook", "jupyter", "notebook", "docx", "pdf", "colab"]
+}

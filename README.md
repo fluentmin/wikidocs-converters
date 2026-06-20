@@ -1,11 +1,12 @@
 # wikidocs-converters — Claude Code 플러그인 마켓플레이스
 
-여러 포맷의 문서를 **WikiDocs용 마크다운**으로 변환하는 플러그인 모음입니다.
+여러 포맷의 문서를 **WikiDocs용 마크다운**으로 변환합니다. `/wikidocs:convert <파일>` 하나로
+**파일 확장자를 보고 알맞은 변환기를 자동 선택**합니다(같은 `.md` 가 웹·PDF·EPUB 어디서도 깨지지 않게).
 ## **사람이 해야하는** 최초 작업(GitHub과 WikiDocs 연동)
 먼저 WikiDocs에 회원가입 및 로그인한 후 https://wikidocs.net/profile/edit/book 에서 [새 책 만들기 (깃허브 연동)](https://wikidocs.net/321336)를 참고하여 깃허브와 연동된 WikiDocs 책을 만들어주세요. 책을 만들고 나면 `README.md`, `TOC.md` 중 기존 GitHub repo에 없는 파일이 push됩니다. 이 플러그인을 사용하여 변환할 파일은 해당 repo 하위에 위치시켜주세요.
 
 - **현재 지원**: Jupyter 노트북(.ipynb) — 단순 파싱이 아니라 **코드의 실제 실행 결과(표·로그·그림)까지** 싣습니다.
-- **향후 계획**: docx · pdf · pptx · md 등 포맷별 플러그인을 같은 마켓플레이스에 추가합니다.
+- **향후 계획**: docx · pdf · pptx · md 등 포맷을 **같은 `/wikidocs:convert` 스킬**에 추가합니다(확장자로 분기).
 
 ## 플러그인 설치
 
@@ -13,15 +14,15 @@
 cd <위에서 WikiDocs와 연동해둔 GitHub repo 경로>
 claude # Claude Code CLI에서 아래 명령어 실행
 /plugin marketplace add fluentmin/wikidocs-converters
-/plugin install notebook-to-wikidocs@wikidocs-converters
+/plugin install wikidocs@wikidocs-converters
 /reload-plugins
 ```
 
 ## 들어 있는 플러그인
 
-### `notebook-to-wikidocs` — Jupyter 노트북 변환기
+### `wikidocs` — 문서 → WikiDocs 변환기
 
-스킬 하나(`/notebook-to-wikidocs`)와 스크립트 4종:
+스킬 하나(`/wikidocs:convert`)가 파일 확장자로 변환기를 고릅니다. 현재 `.ipynb` 경로(스크립트 4종):
 
 | 파일 | 역할 |
 |---|---|
@@ -36,13 +37,14 @@ claude # Claude Code CLI에서 아래 명령어 실행
 
 ## 사용 예시 — 실제 노트북에 적용
 
-설치 후 슬래시 명령으로 호출합니다(`disable-model-invocation` 이라 사용자가 직접 호출).
+설치 후 `/wikidocs:convert <파일>` 로 호출합니다(`disable-model-invocation` 이라 사용자가 직접 호출).
+스킬이 확장자를 보고 변환기를 고릅니다 — 아래 예시는 모두 `.ipynb`(현재 지원 포맷)입니다.
 대상 노트북이 있는 폴더가 작업 디렉터리이거나 `--root` 로 지정합니다.
 
 ### 예시 1 — 노트북 1개 변환 (기본 single 모드)
 
 ```
-/notebook-to-wikidocs analysis.ipynb
+/wikidocs:convert analysis.ipynb
 ```
 
 - **경로는 절대경로·상대경로 모두 가능**합니다.
@@ -77,7 +79,7 @@ claude # Claude Code CLI에서 아래 명령어 실행
 내용이 긴 "한 챕터" 노트북을 여러 절로 나눠 출판할 때 — **설정 파일 없이** 동작합니다:
 
 ```
-/notebook-to-wikidocs report.ipynb --split sections
+/wikidocs:convert report.ipynb --split sections
 ```
 
 - 분할 기준은 **노트북 안의 `## `(H2) 헤딩**입니다. 
@@ -107,8 +109,8 @@ claude # Claude Code CLI에서 아래 명령어 실행
 ### 예시 3 — 여러 노트북 일괄 변환
 
 ```
-/notebook-to-wikidocs 1 7 24            # 번호로 (NN_slug/NN_slug.ipynb 규약)
-/notebook-to-wikidocs --all             # --root 아래 모든 노트북 (사용자 확인 후)
+/wikidocs:convert 1 7 24            # 번호로 (NN_slug/NN_slug.ipynb 규약)
+/wikidocs:convert --all             # --root 아래 모든 노트북 (사용자 확인 후)
 ```
 
 각 노트북은 위와 같은 `pages/*.md` + `assets/*.png` 를 만들고, `TOC.md` 에 항목이 번호 순서로 쌓입니다.
@@ -116,7 +118,7 @@ claude # Claude Code CLI에서 아래 명령어 실행
 ### 변환 후 검증 (선택)
 
 ```
-python3 "${CLAUDE_PLUGIN_ROOT}/skills/notebook-to-wikidocs/scripts/check_wikidocs_md.py" --root .
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/convert/scripts/check_wikidocs_md.py" --root .
 ```
 
 전자책 작성 규칙(본문 H1 금지, 헤딩 빈 줄, 외부 이미지·raw HTML·수평선 금지, 각주 유니크 등)을
