@@ -76,7 +76,7 @@ claude # Claude Code CLI에서 아래 명령어 실행
 
 ### 예시 2 — 한 노트북을 장→절 여러 페이지로 (sections 모드)
 
-내용이 긴 "한 챕터" 노트북을 여러 절로 나눠 출판할 때 — **설정 파일 없이** 동작합니다:
+내용이 긴 "한 챕터" 노트북을 여러 절로 나눠 출판할 때
 
 ```
 /wikidocs:convert report.ipynb --split

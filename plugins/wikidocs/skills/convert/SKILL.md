@@ -1,7 +1,7 @@
 ---
 name: convert
 description: 파일 확장자에 맞는 변환기를 골라 문서를 WikiDocs용 마크다운으로 변환한다. 웹·PDF·EPUB(전자책) 어디서도 깨지지 않게 만든다. 현재 Jupyter 노트북(.ipynb)을 지원하며, 코드와 함께 실제 실행 결과(표·로그·그림)까지 싣고 실행본이 없으면 google-colab-cli로 실행해 결과를 확보한다.
-argument-hint: "<파일 경로(required), 예: report.ipynb(상대경로), /Users/path/to/report.ipynb(절대경로)> [--split(optional) (입력 시 변환 대상 파일을 장→절 여러 페이지로 분할, 미입력 시 하나의 페이지로 변환)] "
+argument-hint: "<파일> [--split]"
 disable-model-invocation: true
 ---
 
