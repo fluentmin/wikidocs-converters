@@ -57,8 +57,7 @@ claude # Claude Code CLI에서 아래 명령어 실행
     (예: `--root ~/proj analysis.ipynb` → `~/proj/analysis.ipynb`).
 - 노트북에 **실행 출력이 이미 있으면** 그대로 싣고 변환합니다.
 - 출력이 **없으면** 스킬이 먼저 물어봅니다 — "실행해서 결과까지 실을까요(ⓐ), 코드만(ⓑ)?"
-  - ⓐ + CPU 노트북 → `--execute` (표준 라이브러리 실행, 추가 설치 불필요) → `analysis_executed.ipynb` 생성 후 변환
-  - ⓐ + GPU 노트북 → colab-cli 로 Colab 에서 실행(아래 "사전 준비") → `analysis_executed.ipynb` 회수 후 변환
+  - ⓐ 실행 → colab-cli 로 Colab 에서 실행(CPU·GPU 모두, 아래 "사전 준비") → `analysis_executed.ipynb` 회수 후 변환
   - ⓑ → 출력 없는 셀은 코드만
 
 생기는 파일:
@@ -136,7 +135,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/skills/convert/scripts/check_wikidocs_md.py" --ro
 ## 사전 준비 (colab-cli 경로를 쓸 때만)
 
 ```bash
-uv tool install "git+https://github.com/googlecolab/google-colab-cli"   # issue #14 keep-alive 수정본
+uv tool install "git+https://github.com/googlecolab/google-colab-cli"
 colab --auth=oauth2 whoami        # 동의 화면 "모두 선택". 과금 방지로 결제수단 없는 무료 계정 권장.
 ```
 

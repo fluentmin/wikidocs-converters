@@ -12,7 +12,6 @@ allowed-tools:
   - Bash(ls:*)
   - Bash(wc:*)
   - Bash(grep:*)
-  - Bash(jq:*)
   - Bash(find:*)
   - Bash(mktemp:*)
   - Bash(rm -rf /tmp/wikidocs-convert.*)
@@ -84,15 +83,11 @@ SK="${CLAUDE_PLUGIN_ROOT:-.}/skills/convert"   # scripts/ 가 이 아래
 
 > "이 노트북에 실행 결과가 없습니다. ⓐ 실행해서 실제 출력까지 실을까요, 아니면 ⓑ 코드만 실을까요?"
 
-- **ⓑ 코드만** → `--execute` 없이 변환한다(출력 없는 셀은 코드만).
-- **ⓐ 실행 원함** → 노트북 성격에 맞는 경로로 실행하고, **결과를 소스 옆 `<이름>_executed.ipynb` 로 저장**한 뒤 ② 변환:
-  - **CPU로 충분**(sklearn·간단 토크나이저 등) → `--execute --save-executed`. 임의의 절대/상대 경로에서도 동작.
-    ```bash
-    python3 "$SK/scripts/build_wikidocs.py" /abs/path/to/foo.ipynb --execute --save-executed
-    # → /abs/path/to/foo_executed.ipynb 생성 후 변환
-    ```
-  - **GPU 필요**(BERT 학습·LLM 등) → **colab-cli** 로 Colab VM 에서 실행(아래). VM 이 저장소를 clone 해
-    **이름으로** 노트북을 찾으므로, 대상 노트북은 **푸시된 git 저장소 안**에 있어야 한다(아니면 사용자에게 안내).
+- **ⓑ 코드만** → 그대로 변환한다(출력 없는 셀은 코드만).
+- **ⓐ 실행 원함** → **colab-cli** 로 Colab VM 에서 실행해 **결과를 소스 옆 `<이름>_executed.ipynb` 로
+  저장**한 뒤 ② 변환(아래). CPU·GPU 노트북 모두 colab-cli 로 실행한다(변환기는 로컬에서 직접 실행하지
+  않는다). VM 이 저장소를 clone 해 **이름으로** 노트북을 찾으므로, 대상 노트북은 **푸시된 git 저장소
+  안**에 있어야 한다(아니면 사용자에게 안내).
 
 **colab-cli (GPU 실행, 권장)** — [`google-colab-cli`](https://github.com/googlecolab/google-colab-cli) 로
 **터미널에서** VM 할당→실행→회수. 결과를 로컬 소스 옆에 받아 **PAT 불필요**, 인증 1회면 스킬이 직접 실행.
@@ -115,7 +110,7 @@ python3 "$SK/scripts/build_wikidocs.py" 7 24 --root <프로젝트>           # <
 python3 "$SK/scripts/build_wikidocs.py" --all --root <프로젝트>          # 전체 (사용자 확인 후)
 ```
 
-**출력 원천 우선순위**(노트북별 자동): `--executed-notebook` > 소스 옆 `<이름>_executed.ipynb` > `--execute` > 노트북 자체 출력 > (없음).
+**출력 원천 우선순위**(노트북별 자동): `--executed-notebook` > 소스 옆 `<이름>_executed.ipynb` > 노트북 자체 출력 > (없음).
 
 **분할(장→절)** — 기본은 단순화돼 있다:
 - `--split` **없음(기본)**: 노트북 1개 = 페이지 1개. 설정·의존성 없이 동작. (`--split single` 도 동일.)
@@ -174,6 +169,6 @@ python3 "$SK/scripts/check_wikidocs_md.py" --root <프로젝트>   # pages/*.md 
   (성공·실패·중단 무관) 반드시 `rm -rf` 로 지운다. 이 경로의 정리만 사전 승인돼 있고, 그 밖의 경로를
   지우려면 사용자 확인을 받는다.
 - 사전 승인된 도구(`allowed-tools`): 읽기(Read·cat·head·tail·ls·wc·grep·jq·find), `python3`(빌드·린트·
-  임시 변환), `mktemp`, `/tmp/wikidocs-convert.*` 정리. **네트워크·과금이 따르는 colab 경로(`bash`/`colab`)는
-  제외**돼 매번 사용자 확인을 받는다. `--execute` 는 python3 라 도구로는 자동 승인되지만, 실행 여부 자체는
-  ①의 ⓐ/ⓑ 질문으로 반드시 먼저 확정한다(임의 실행 금지).
+  임시 변환), `mktemp`, `/tmp/wikidocs-convert.*` 정리. **네트워크 사용이 발생할 수 있는 colab 경로(`bash`/`colab`)는
+  제외**돼 매번 사용자 확인을 받는다. 노트북 실행 여부는 ①의 ⓐ/ⓑ 질문으로 반드시 먼저 확정한다
+  (임의 실행 금지). 실행이 필요하면 colab-cli 경로로만 한다 — 변환기는 로컬에서 직접 실행하지 않는다.

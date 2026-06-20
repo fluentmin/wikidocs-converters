@@ -9,13 +9,12 @@
   2) <stem>_executed.ipynb       : 소스 노트북 옆에 같은 이름+_executed 가 있으면 자동 사용
                                    (실행 결과 없는 노트북을 한 번 실행해 붙여둔 결과물)
   3) 노트북 자체의 outputs        : 입력 노트북에 이미 출력이 박혀 있으면 그대로 사용
-  4) --execute                   : 이 자리에서 직접 실행(표준 라이브러리만, 주로 CPU 노트북).
-                                   --save-executed 면 결과를 <stem>_executed.ipynb 로 저장.
-  5) (없음)                      : 코드만 싣는다(가짜 출력 금지). 노트북 전체에 출력이 없으면
+  4) (없음)                      : 코드만 싣는다(가짜 출력 금지). 노트북 전체에 출력이 없으면
                                    원천=출력없음 으로 표시되어 ①에서 사용자에게 실행 여부를 묻는다.
 
-GPU 실행이 필요하면 colab-cli 러너(run_via_cli.sh)가 Colab 에서 돌려 <stem>_executed.ipynb 를
-만든다. executed/ 같은 별도 보관 폴더는 쓰지 않는다 — 실행본은 소스 옆에 _executed 로 둔다.
+실행은 이 변환기가 직접 하지 않는다 — colab-cli 러너(run_via_cli.sh)가 Colab 에서 돌려
+<stem>_executed.ipynb 를 만든다. executed/ 같은 별도 보관 폴더는 쓰지 않는다 —
+실행본은 소스 옆에 _executed 로 둔다.
 
 분할(장→절):
   (기본, --split 없음)   : 노트북 1개 = 페이지 1개. 의존성·설정 없이 동작.
@@ -434,113 +433,6 @@ def _render_outputs(cell: dict, assets_dir: Path | None, stem: str, counter: lis
     return "\n\n".join(blocks)
 
 
-# --------------------------------------------------------------------------- #
-# 노트북 실행 (선택) — 표준 라이브러리만 사용 (nbclient·nbformat·jupyter 불필요)
-# --------------------------------------------------------------------------- #
-# 코드 셀들을 한 파이썬 서브프로세스에서 순서대로 실행해 출력을 캡처하는 드라이버.
-# stdout/stderr(stream) · 셀 마지막 표현식 repr(execute_result, _repr_html_ 있으면 표까지) ·
-# matplotlib 그림(display_data PNG) · 예외(error)를 nbformat JSON 모양으로 모은다.
-# 위젯 등 리치 출력은 지원하지 않는다 — CPU 노트북용 경량 실행기.
-# (노트북 자체의 의존성(sklearn 등)은 같은 인터프리터에 설치돼 있어야 하는 건 nbclient 와 동일.)
-_EXEC_DRIVER = r'''
-import sys, json, io, ast, base64, traceback
-from contextlib import redirect_stdout, redirect_stderr
-
-cells = json.load(open(sys.argv[1], encoding="utf-8"))
-results = []
-g = {"__name__": "__main__"}
-try:
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as _plt
-except Exception:
-    _plt = None
-
-for src in cells:
-    outs = []
-    buf = io.StringIO()
-    val = None
-    err = None
-    with redirect_stdout(buf), redirect_stderr(buf):
-        try:
-            mod = ast.parse(src)
-            last = mod.body[-1] if mod.body else None
-            if isinstance(last, ast.Expr):
-                if mod.body[:-1]:
-                    exec(compile(ast.Module(mod.body[:-1], []), "<cell>", "exec"), g)
-                val = eval(compile(ast.Expression(last.value), "<cell>", "eval"), g)
-            else:
-                exec(compile(mod, "<cell>", "exec"), g)
-        except Exception:
-            et, ev, tb = sys.exc_info()
-            err = "".join(traceback.format_exception(et, ev, tb.tb_next if tb else tb))
-    text = buf.getvalue()
-    if text:
-        outs.append({"output_type": "stream", "name": "stdout", "text": text})
-    if _plt is not None:
-        for num in _plt.get_fignums():
-            fig = _plt.figure(num)
-            b = io.BytesIO()
-            try:
-                fig.savefig(b, format="png", bbox_inches="tight")
-                outs.append({"output_type": "display_data",
-                             "data": {"image/png": base64.b64encode(b.getvalue()).decode("ascii")},
-                             "metadata": {}})
-            except Exception:
-                pass
-        _plt.close("all")
-    if err is not None:
-        line = err.strip().splitlines()[-1]
-        outs.append({"output_type": "error", "ename": line.split(":")[0],
-                     "evalue": line, "traceback": err.splitlines()})
-    elif val is not None:
-        data = {"text/plain": repr(val)}
-        html = getattr(val, "_repr_html_", None)
-        if callable(html):
-            try:
-                h = html()
-                if isinstance(h, str):
-                    data["text/html"] = h
-            except Exception:
-                pass
-        outs.append({"output_type": "execute_result", "data": data,
-                     "metadata": {}, "execution_count": None})
-    results.append(outs)
-
-json.dump(results, open(sys.argv[2], "w", encoding="utf-8"))
-'''
-
-
-def execute_notebook(path: Path, timeout: int = 1800) -> dict:
-    """표준 라이브러리만으로 노트북 코드 셀을 실행해 outputs 를 채운 dict 를 돌려준다."""
-    import subprocess
-    import tempfile
-
-    nb = json.loads(Path(path).read_text(encoding="utf-8"))
-    code_cells = [c for c in nb.get("cells", []) if c.get("cell_type") == "code"]
-    sources = [_cell_text(c) for c in code_cells]
-
-    with tempfile.TemporaryDirectory() as td:
-        cells_in = Path(td) / "cells.json"
-        outs_out = Path(td) / "outs.json"
-        driver = Path(td) / "driver.py"
-        cells_in.write_text(json.dumps(sources), encoding="utf-8")
-        driver.write_text(_EXEC_DRIVER, encoding="utf-8")
-        proc = subprocess.run(
-            [sys.executable, str(driver), str(cells_in), str(outs_out)],
-            cwd=str(Path(path).parent), timeout=timeout,
-            capture_output=True, text=True,
-        )
-        if not outs_out.exists():
-            raise RuntimeError(f"노트북 실행기 실패: {proc.stderr.strip()[-300:] or proc.stdout.strip()[-300:]}")
-        all_outs = json.loads(outs_out.read_text(encoding="utf-8"))
-
-    for cell, outs in zip(code_cells, all_outs):
-        cell["outputs"] = outs
-        cell["execution_count"] = None
-    return nb
-
-
 def chapter_h1_title(nb: dict) -> str:
     for cell in nb.get("cells", []):
         if cell.get("cell_type") != "markdown":
@@ -944,14 +836,6 @@ def pick_source_notebook(name: str, nb_path: Path, root: Path, args) -> tuple[di
     sibling = nb_path.parent / f"{base_name(name)}{EXECUTED_SUFFIX}.ipynb"
     if sibling != nb_path and sibling.exists():
         return json.loads(sibling.read_text(encoding="utf-8")), sibling.name
-    if args.execute:
-        nb = execute_notebook(nb_path, timeout=args.timeout)
-        saved = ""
-        if args.save_executed:
-            out = nb_path.parent / f"{base_name(name)}{EXECUTED_SUFFIX}.ipynb"
-            out.write_text(json.dumps(nb, ensure_ascii=False, indent=1), encoding="utf-8")
-            saved = f" ({out.name} 저장됨)"
-        return nb, "live --execute" + saved
     nb = json.loads(nb_path.read_text(encoding="utf-8"))
     return nb, ("노트북 자체 출력" if _has_any_outputs(nb) else "출력없음")
 
@@ -1002,14 +886,9 @@ def main() -> None:
     ap.add_argument("--book-title", default=None)
     ap.add_argument("--output-style", choices=OUTPUT_STYLES, default=DEFAULT_OUTPUT_STYLE,
                     help="실행 결과 박스: code(기본, 웹·PDF·EPUB 안전) | html-box(웹 전용, 전자책 깨짐)")
-    ap.add_argument("--execute", action="store_true",
-                    help="표준 라이브러리로 코드 셀을 실행해 실제 출력을 채움 (CPU 노트북용; GPU는 colab-cli 권장)")
     ap.add_argument("--executed-notebook", default=None, help="(단일) 출력이 담긴 실행본 .ipynb 경로")
-    ap.add_argument("--save-executed", action="store_true",
-                    help="--execute 결과를 소스 옆 <이름>_executed.ipynb 로 저장")
     ap.add_argument("--no-truncate", nargs="*", default=None,
                     help="긴 산문 트렁케이트를 끄는 노트북 이름들(토큰화 등 출력=학습내용)")
-    ap.add_argument("--timeout", type=int, default=1800)
     args = ap.parse_args()
 
     root = Path(args.root).expanduser().resolve()
