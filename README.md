@@ -24,7 +24,7 @@ Jupyter 노트북(.ipynb)을 **WikiDocs용 마크다운**으로 변환하는 도
 |---|---|
 | `scripts/build_wikidocs.py` | 노트북 → `pages/*.md` + `assets/` + `TOC.md` 변환(전자책 안전 출력) |
 | `scripts/check_wikidocs_md.py` | 전자책 작성 규칙 린터(회귀·수기편집 점검) |
-| `scripts/run_via_cli.sh` | google-colab-cli 로 실행본(`executed/`) 자동 생성(macOS/Linux) |
+| `scripts/run_via_cli.sh` | google-colab-cli 로 실행본(`<이름>_executed.ipynb`) 자동 생성(macOS/Linux) |
 | `scripts/colab_cli_exec.py` | 위 러너가 Colab VM 에서 돌리는 실행기 |
 | `config/neuqes-101.json` | 장→절 분할(실습/해부/변형/정리) 설정 예시 — 복사해 자기 키워드로 |
 

@@ -20,7 +20,7 @@ disable-model-invocation: true
 
 **핵심 원칙**
 - 코드를 실으면 그 코드의 **실제 실행 결과**도 함께 싣는다 — 가짜 출력을 지어내지 않는다.
-  실행 결과가 없으면 코드만 두고 `<!-- 실행 결과 없음 -->` 주석으로 누락을 드러낸다.
+  실행 결과가 없으면 코드만 싣고, 노트북 전체에 출력이 없을 땐 ①에서 사용자에게 실행 여부를 묻는다.
 - 같은 `.md` 가 **웹(WikiDocs)·PDF·EPUB 세 타깃** 어디서도 깨지지 않게 한다(서점 판매엔 EPUB 필수).
 
 **스크립트 위치(중요)**: 스킬 실행 시 작업 디렉터리는 **사용자 프로젝트**다(플러그인 폴더가 아님).
@@ -35,37 +35,49 @@ SK="${CLAUDE_PLUGIN_ROOT:-.}/skills/notebook-to-wikidocs"   # scripts/ · config
 `① 실행 결과 확보 → ② 변환(build_wikidocs.py) → ③ 검증(check_wikidocs_md.py) → ④ 결과 해석 덧붙이기`
 
 대상 프로젝트(노트북이 있는 곳)는 `--root` 로 지정한다(기본: 현재 디렉터리). 산출물(`pages/`,
-`assets/`, `TOC.md`, `executed/`)도 `--root` 아래에 만들어진다.
+`assets/`, `TOC.md`)도 `--root` 아래에 만들어진다. 실행본은 소스 노트북 옆 `<이름>_executed.ipynb`.
 
-### ① 실행 결과 확보 — `executed/<이름>.ipynb`
+### ① 실행 결과 확보 — `<이름>_executed.ipynb`
 
-노트북의 진짜 출력은 실행해야 나온다. 두 경로 모두 `executed/<이름>.ipynb` 를 만든다.
+변환기는 출력 원천을 이 순서로 자동 탐색한다(별도 `executed/` 폴더는 쓰지 않는다):
+**`--executed-notebook` → 소스 옆 `<이름>_executed.ipynb` → 노트북 자체에 박힌 출력 → (없음)**.
 
-- **colab-cli (권장)** — [`google-colab-cli`](https://github.com/googlecolab/google-colab-cli) 로
-  **터미널에서** VM 할당→실행→회수. 결과를 로컬로 받아 **PAT 불필요**, 인증 1회면 스킬이 직접 실행.
-  ```bash
-  # 사전 1회 (issue #14 keep-alive 수정본 — PyPI v0.5.11 이하는 VM 이 ~11분에 idle-prune)
-  uv tool install "git+https://github.com/googlecolab/google-colab-cli"
-  colab --auth=oauth2 whoami       # 동의 화면 "모두 선택". 과금 방지로 결제수단 없는 무료 계정 권장.
+**변환 전 반드시 확인 — 출력 원천이 하나도 없으면, 조용히 넘어가지 말고 사용자에게 물어본다(가짜 출력 금지):**
 
-  bash "$SK/scripts/run_via_cli.sh" --root <프로젝트>   # 인자 없으면 전부, '7 24' 처럼 일부도
-  ```
-  REPO 는 git origin 에서 자동 인식(VM 은 clone 만). `executed/<이름>.ipynb` 가 로컬에 쌓인다.
-- **로컬 실행(CPU 노트북)** — GPU가 필요 없으면 변환 시 `--execute --save-executed` 로 nbclient 직접 실행.
-- **수동** — Colab/Jupyter 에서 끝까지 실행 후 출력 포함 `.ipynb` 를 `executed/<이름>.ipynb` 로 저장.
+> "이 노트북에 실행 결과가 없습니다. ⓐ 실행해서 실제 출력까지 실을까요, 아니면 ⓑ 코드만 실을까요?"
 
-**변환 전 반드시 확인**: 변환할 노트북의 `executed/<이름>.ipynb` 가 있는지 먼저 본다.
-**없으면 합성으로 조용히 넘어가지 말고** 먼저 실행해 실행본을 만든다.
+- **ⓑ 코드만** → `--execute` 없이 변환한다(출력 없는 셀은 코드만).
+- **ⓐ 실행 원함** → 노트북 성격에 맞는 경로로 실행하고, **결과를 소스 옆 `<이름>_executed.ipynb` 로 저장**한 뒤 ② 변환:
+  - **CPU로 충분**(sklearn·간단 토크나이저 등) → `--execute --save-executed`. 임의의 절대/상대 경로에서도 동작.
+    ```bash
+    python3 "$SK/scripts/build_wikidocs.py" /abs/path/to/foo.ipynb --execute --save-executed
+    # → /abs/path/to/foo_executed.ipynb 생성 후 변환
+    ```
+  - **GPU 필요**(BERT 학습·LLM 등) → **colab-cli** 로 Colab VM 에서 실행(아래). VM 이 저장소를 clone 해
+    **이름으로** 노트북을 찾으므로, 대상 노트북은 **푸시된 git 저장소 안**에 있어야 한다(아니면 사용자에게 안내).
+
+**colab-cli (GPU 실행, 권장)** — [`google-colab-cli`](https://github.com/googlecolab/google-colab-cli) 로
+**터미널에서** VM 할당→실행→회수. 결과를 로컬 소스 옆에 받아 **PAT 불필요**, 인증 1회면 스킬이 직접 실행.
+```bash
+# 사전 1회 (issue #14 keep-alive 수정본 — PyPI v0.5.11 이하는 VM 이 ~11분에 idle-prune)
+uv tool install "git+https://github.com/googlecolab/google-colab-cli"
+colab --auth=oauth2 whoami       # 동의 화면 "모두 선택". 과금 방지로 결제수단 없는 무료 계정 권장.
+
+bash "$SK/scripts/run_via_cli.sh" --root <프로젝트> 7 24                  # 번호/폴더명/이름/.ipynb 경로 모두 가능
+bash "$SK/scripts/run_via_cli.sh" --root <프로젝트> /abs/path/to/foo.ipynb
+```
+REPO 는 git origin 에서 자동 인식(VM 은 clone 만). 소스 옆 `<이름>_executed.ipynb` 가 로컬에 쌓인 뒤 ② 변환.
+멱등·재개: 소스가 안 바뀐 노트북은 skip(`FORCE=1` 로 강제).
 
 ### ② 변환 — `scripts/build_wikidocs.py`
 
 ```bash
 python3 "$SK/scripts/build_wikidocs.py" path/to/notebook.ipynb --root <프로젝트>
-python3 "$SK/scripts/build_wikidocs.py" 7 24 --root <프로젝트>           # executed/<이름>.ipynb 자동 사용
+python3 "$SK/scripts/build_wikidocs.py" 7 24 --root <프로젝트>           # <이름>_executed.ipynb 자동 사용
 python3 "$SK/scripts/build_wikidocs.py" --all --root <프로젝트>          # 전체 (사용자 확인 후)
 ```
 
-**출력 원천 우선순위**(노트북별 자동): `--executed-notebook` > `executed/<이름>.ipynb` > `--execute` > (없음).
+**출력 원천 우선순위**(노트북별 자동): `--executed-notebook` > 소스 옆 `<이름>_executed.ipynb` > `--execute` > 노트북 자체 출력 > (없음).
 
 **분할(장→절)** — 기본은 단순화돼 있다:
 - `--split single` **(기본)**: 노트북 1개 = 페이지 1개. 설정·의존성 없이 동작.
@@ -87,7 +99,7 @@ python3 "$SK/scripts/check_wikidocs_md.py" --root <프로젝트>   # pages/*.md 
 ```
 
 변환기가 자동 방어하지만, **회귀·수기 편집**을 잡는 독립 린터다(코드펜스 안 제외).
-이어서 사람이 확인: 코드 셀에 `▶ 실행 결과`(또는 `<!-- 실행 결과 없음 -->`이 맞는지),
+이어서 사람이 확인: 코드 셀에 `▶ 실행 결과`(출력 없는 셀이 맞는지),
 `assets/` PNG·상대경로(`../assets/...`), 첫 H1 제거(페이지 제목은 `TOC.md` 담당).
 
 ### ④ 결과 해석 덧붙이기 (스킬이 직접 작성 — 스크립트 아님)

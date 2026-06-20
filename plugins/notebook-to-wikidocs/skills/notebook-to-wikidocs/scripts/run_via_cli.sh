@@ -33,7 +33,7 @@ if [ -z "$ROOT" ]; then
     ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 fi
 ROOT="$(cd "$ROOT" && pwd)"
-OUTDIR="$ROOT/executed"
+STAGING="/content/_wd_out"   # VM 플랫 스테이징(b64 회수 위치) — colab_cli_exec.py 와 일치
 
 # REPO: 미지정 시 로컬 git origin 에서 자동 인식(VM 은 clone 만 하므로 origin 이면 충분).
 REPO="${REPO:-}"
@@ -48,7 +48,6 @@ printf '%s' "$REPO" | grep -qE '^[^/]+/[^/]+$' || {
     echo "✗ REPO 를 자동 인식하지 못했습니다(git origin 확인). 직접 지정: REPO=you/repo $0 [노트북...]"; exit 1; }
 command -v colab >/dev/null 2>&1 || { echo "✗ colab-cli 미설치 → uv tool install \"git+https://github.com/googlecolab/google-colab-cli\""; exit 1; }
 [ -f "$EXECPY" ] || { echo "✗ $EXECPY 없음(같은 폴더의 colab_cli_exec.py 필요)"; exit 1; }
-mkdir -p "$OUTDIR"
 
 CUR_SESSION=""
 cleanup() { [ -n "$CUR_SESSION" ] && colab stop -s "$CUR_SESSION" >/dev/null 2>&1 || true; }
@@ -61,9 +60,22 @@ try:
 except Exception: sys.exit(1)' "$1" 2>/dev/null
 }
 
-# 인자(번호/폴더명/이름) → 실행 대상 이름(노트북 stem). 못 찾으면 1.
+# 로컬 소스 노트북이 있는 디렉터리(실행본은 그 옆에 <이름>_executed.ipynb 로 둔다).
+src_dir() {
+    local name="$1"
+    if [ -f "$ROOT/$name/$name.ipynb" ]; then echo "$ROOT/$name"; else echo "$ROOT"; fi
+}
+# 로컬 실행본 경로
+exec_path() { echo "$(src_dir "$1")/${1}_executed.ipynb"; }
+
+# 인자(번호/폴더명/이름/.ipynb 경로) → 실행 대상 이름(노트북 stem). 못 찾으면 1.
+# 주의: VM 이 REPO 를 clone 해 '이름'으로 찾으므로, 대상 노트북은 푸시된 저장소 안에 있어야 한다.
 resolve() {
-    local spec="$1" nn m
+    local spec="$1" nn m base
+    case "$spec" in
+        *.ipynb)                                                        # 절대/상대 .ipynb 경로
+            base="$(basename "$spec" .ipynb)"; echo "$base"; return 0 ;;
+    esac
     [ -d "$ROOT/$spec" ] && { echo "$spec"; return 0; }                  # NN_slug/ 폴더
     [ -f "$ROOT/$spec.ipynb" ] && { echo "$spec"; return 0; }            # 루트 직속 이름.ipynb
     if printf '%s' "$spec" | grep -qE '^[0-9]+$'; then
@@ -75,11 +87,11 @@ resolve() {
     return 1
 }
 
-# 전체 대상 목록(이름): NN_slug/ 폴더 + 루트 직속 .ipynb(러너 제외).
+# 전체 대상 목록(이름): NN_slug/ 폴더 + 루트 직속 .ipynb(러너·_executed 제외).
 all_targets() {
     (cd "$ROOT" && ls -d [0-9]*_*/ 2>/dev/null | sed 's#/##'
      cd "$ROOT" && ls *.ipynb 2>/dev/null | sed 's#\.ipynb$##' \
-        | grep -vE '^(run_on_colab|run_via_cli|colab_cli_exec)$') | sort -u
+        | grep -vE '^(run_on_colab|run_via_cli|colab_cli_exec)$|_executed$') | sort -u
 }
 
 run_one() {  # $1=name — 새 VM 1개로 실행 → executed/<name>.ipynb 회수 → VM 종료
@@ -89,9 +101,9 @@ run_one() {  # $1=name — 새 VM 1개로 실행 → executed/<name>.ipynb 회�
     colab run --keep -s "$sess" --gpu "$GPU" --timeout 120 \
         "$EXECPY" "$REPO" "$BRANCH" "$name" --force \
         || echo "  (colab run 비정상 종료)"
-    b64="$(mktemp)"
-    colab download -s "$sess" "/content/${REPO##*/}/executed/$name.ipynb.b64" "$b64" >/dev/null 2>&1 \
-        && python3 -c 'import base64,sys;open(sys.argv[2],"wb").write(base64.b64decode(open(sys.argv[1],"rb").read()))' "$b64" "$OUTDIR/$name.ipynb" \
+    b64="$(mktemp)"; local dest; dest="$(exec_path "$name")"
+    colab download -s "$sess" "$STAGING/${name}_executed.ipynb.b64" "$b64" >/dev/null 2>&1 \
+        && python3 -c 'import base64,sys;open(sys.argv[2],"wb").write(base64.b64decode(open(sys.argv[1],"rb").read()))' "$b64" "$dest" \
         || true
     rm -f "$b64"
     colab stop -s "$sess" >/dev/null 2>&1 || true
@@ -113,18 +125,18 @@ echo "===== CLI 실행 (${total}개, repo=$REPO@$BRANCH, root=$ROOT, $(date '+%H
 ok=0; skip=0; fail=0; i=0
 for name in "${targets[@]}"; do
     i=$((i + 1))
-    if [ -z "$FORCE" ] && is_ok "$OUTDIR/$name.ipynb"; then
+    if [ -z "$FORCE" ] && is_ok "$(exec_path "$name")"; then
         echo "[$i/$total] $name — 이미 ok, skip (FORCE=1 로 강제)"; skip=$((skip + 1)); continue
     fi
     echo ""
     echo "===== [$i/$total] $name — 새 VM ($(date '+%H:%M:%S')) ====="
     run_one "$name"
-    if ! is_ok "$OUTDIR/$name.ipynb"; then
+    if ! is_ok "$(exec_path "$name")"; then
         echo "  ↻ $name 1차 미완 — 1회 재시도 ($(date '+%H:%M:%S'))"
         run_one "$name"
     fi
-    if is_ok "$OUTDIR/$name.ipynb"; then
-        echo "  ✓ $name"; ok=$((ok + 1))
+    if is_ok "$(exec_path "$name")"; then
+        echo "  ✓ $name → $(exec_path "$name" | sed "s#^$ROOT/##")"; ok=$((ok + 1))
     else
         echo "  ✗ $name — 미완(11분 초과 또는 연결 끊김; 2회 시도)"; fail=$((fail + 1))
     fi
@@ -132,4 +144,5 @@ done
 
 echo ""
 echo "===== 종료 ($(date '+%H:%M:%S')): ok=$ok skip=$skip fail=$fail / total=$total ====="
+echo "실행본은 소스 옆 <이름>_executed.ipynb 로 저장됨."
 echo "이어서 변환:  python3 \"$HERE/build_wikidocs.py\" --root \"$ROOT\" <대상>"

@@ -9,10 +9,11 @@
 `colab run` 이 이 파일을 VM 커널에 올려 실행하면:
   1) REPO 를 clone (VM 은 clone 만 — 원본 push 권한 불필요)
   2) 대상 노트북을 NotebookClient 로 끝까지 실행
-  3) 출력 포함 executed/<이름>.ipynb 를 VM 에 저장(실패해도 다음 노트북 계속)
-  4) 무손실 회수용 base64 사본(executed/<이름>.ipynb.b64) 저장
-그 뒤 래퍼가 `colab download` 로 결과를 로컬로 가져온다.
+  3) 출력 포함 <소스옆>/<이름>_executed.ipynb 를 VM 에 저장(실패해도 다음 노트북 계속)
+  4) 무손실 회수용 base64 사본을 플랫 스테이징(/content/_wd_out/<이름>_executed.ipynb.b64) 에 저장
+그 뒤 래퍼가 `colab download` 로 결과를 로컬 소스 옆에 가져온다.
 
+별도 executed/ 보관 폴더는 쓰지 않는다 — 실행본은 소스 노트북 옆에 _executed 로 둔다.
 소스 해시 멱등(`executed_from` 도장)으로 안 바뀐 노트북은 건너뛴다.
 
 TARGET:
@@ -31,6 +32,8 @@ from pathlib import Path
 
 PER_CELL_TIMEOUT = 60 * 60  # 셀당 최대 실행 시간(초)
 RUNNER_NAMES = {"run_on_colab", "run_via_cli", "colab_cli_exec"}
+EXECUTED_SUFFIX = "_executed"
+STAGING = "/content/_wd_out"  # b64 회수용 플랫 스테이징(래퍼가 여기서 download)
 
 
 def fmt_dur(sec):
@@ -60,11 +63,15 @@ def main():
         subprocess.run(["git", "-C", str(work), "checkout", "-q", branch], check=True)
         subprocess.run(["git", "-C", str(work), "pull", "-q", "--depth", "1"], check=False)
 
-    exec_dir = work / "executed"
-    exec_dir.mkdir(exist_ok=True)
+    stage = Path(STAGING)
+    stage.mkdir(parents=True, exist_ok=True)
+
+    def executed_path(nb_path):
+        """소스 노트북 옆 <이름>_executed.ipynb 경로."""
+        return nb_path.parent / (nb_path.stem + EXECUTED_SUFFIX + ".ipynb")
 
     def notebooks():
-        """[(name, nb_path)] — NN_slug/NN_slug.ipynb 폴더 규약 + 루트 직속 *.ipynb(러너 제외)."""
+        """[(name, nb_path)] — NN_slug/NN_slug.ipynb 폴더 규약 + 루트 직속 *.ipynb(러너·_executed 제외)."""
         out = {}
         for d in sorted(work.glob("[0-9]*_*")):
             if not d.is_dir():
@@ -73,7 +80,7 @@ def main():
             if nb.exists():
                 out[d.name] = nb
         for nb in sorted(work.glob("*.ipynb")):
-            if nb.stem not in RUNNER_NAMES:
+            if nb.stem not in RUNNER_NAMES and not nb.stem.endswith(EXECUTED_SUFFIX):
                 out.setdefault(nb.stem, nb)
         return list(out.items())
 
@@ -85,8 +92,8 @@ def main():
             h.update((c.source or "").encode()); h.update(b"\0")
         return h.hexdigest()
 
-    def executed_hash(name):
-        p = exec_dir / (name + ".ipynb")
+    def executed_hash(nb_path):
+        p = executed_path(nb_path)
         if not p.exists():
             return None
         try:
@@ -105,7 +112,7 @@ def main():
         return [(n, p) for n, p in all_nb if n in keys or n[:2] in keys]
 
     base = base_set(target)
-    sel = base if force else [(n, p) for n, p in base if source_hash(p) != executed_hash(n)]
+    sel = base if force else [(n, p) for n, p in base if source_hash(p) != executed_hash(p)]
     print(f"실행 대상: {len(sel)}개  (TARGET={target!r}, FORCE={force})", flush=True)
 
     written = []
@@ -147,11 +154,13 @@ def main():
             "status": status,
             "elapsed_sec": round(elapsed, 1),
         }
-        nbformat.write(nb, exec_dir / (name + ".ipynb"))
-        (exec_dir / (name + ".ipynb.b64")).write_text(
+        # 소스 옆 <이름>_executed.ipynb + 회수용 b64(플랫 스테이징)
+        out_local = executed_path(p)
+        nbformat.write(nb, out_local)
+        (stage / (name + EXECUTED_SUFFIX + ".ipynb.b64")).write_text(
             base64.b64encode(nbformat.writes(nb).encode("utf-8")).decode("ascii"))
         written.append((name, status, elapsed))
-        print(f"  → 저장 executed/{name}.ipynb  [{status}]  ⏱ {fmt_dur(elapsed)}", flush=True)
+        print(f"  → 저장 {out_local.relative_to(work)}  [{status}]  ⏱ {fmt_dur(elapsed)}", flush=True)
 
     total_elapsed = time.time() - total_t0
     print("\n=== 요약 (소요 시간) ===", flush=True)
