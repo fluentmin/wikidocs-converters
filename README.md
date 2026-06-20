@@ -1,20 +1,21 @@
 # wikidocs-converters — Claude Code 플러그인 마켓플레이스
 
-여러 포맷의 문서를 **WikiDocs용 마크다운**으로 변환하는 플러그인 모음입니다. 같은 `.md` 가
-**웹(WikiDocs)·PDF·EPUB(전자책)** 어디서도 깨지지 않게 만드는 것이 공통 목표입니다.
+여러 포맷의 문서를 **WikiDocs용 마크다운**으로 변환하는 플러그인 모음입니다.
+## **사람이 해야하는** 최초 작업(GitHub과 WikiDocs 연동)
+먼저 WikiDocs에 회원가입 및 로그인한 후 https://wikidocs.net/profile/edit/book 에서 [새 책 만들기 (깃허브 연동)](https://wikidocs.net/321336)를 참고하여 깃허브와 연동된 WikiDocs 책을 만들어주세요. 책을 만들고 나면 `README.md`, `TOC.md` 중 기존 GitHub repo에 없는 파일이 push됩니다. 이 플러그인을 사용하여 변환할 파일은 해당 repo 하위에 위치시켜주세요.
 
 - **현재 지원**: Jupyter 노트북(.ipynb) — 단순 파싱이 아니라 **코드의 실제 실행 결과(표·로그·그림)까지** 싣습니다.
 - **향후 계획**: docx · pdf · pptx · md 등 포맷별 플러그인을 같은 마켓플레이스에 추가합니다.
 
-## 설치
+## 플러그인 설치
 
-```
+```bash
+cd <위에서 WikiDocs와 연동해둔 GitHub repo 경로>
+claude # Claude Code CLI에서 아래 명령어 실행
 /plugin marketplace add fluentmin/wikidocs-converters
 /plugin install notebook-to-wikidocs@wikidocs-converters
+/reload-plugins
 ```
-
-(아직 GitHub에 푸시 전이라면 로컬 경로로도 추가할 수 있습니다:
-`/plugin marketplace add /path/to/wikidocs-converters`)
 
 ## 들어 있는 플러그인
 
@@ -28,10 +29,10 @@
 | `scripts/check_wikidocs_md.py` | 전자책 작성 규칙 린터(회귀·수기편집 점검) |
 | `scripts/run_via_cli.sh` | google-colab-cli 로 실행본(`<이름>_executed.ipynb`) 자동 생성(macOS/Linux) |
 | `scripts/colab_cli_exec.py` | 위 러너가 Colab VM 에서 돌리는 실행기 |
-| `config/neuqes-101.json` | 장→절 분할(실습/해부/변형/정리) 설정 예시 — 복사해 자기 키워드로 |
 
 **기본 동작은 노트북 1개 = 페이지 1개(`--split single`)** 로 의존성 없이 돕니다.
-한 장을 여러 절로 쪼개려면 `--config` 로 키워드 매핑을 주고 `--split sections` 를 씁니다.
+한 장을 여러 절로 쪼개려면 `--split sections` 를 씁니다 — **노트북의 `## `(H2) 헤딩을
+절 경계로 자동 분할**합니다(아래 예시 2).
 
 ## 사용 예시 — 실제 노트북에 적용
 
@@ -44,6 +45,14 @@
 /notebook-to-wikidocs analysis.ipynb
 ```
 
+- **경로는 절대경로·상대경로 모두 가능**합니다.
+  - 절대경로: `/Users/me/proj/analysis.ipynb` 처럼 그대로 해석합니다.
+  - 상대경로: `--root` 기준으로 해석합니다. `--root` 를 주지 않으면 기본값이 `.`,
+    즉 **`claude` 를 실행한 현재 작업 디렉터리**(보통 `cd` 해 둔 GitHub repo 루트)가 기준입니다.
+    예) repo 루트에서 실행했다면 `analysis.ipynb` → `<repo>/analysis.ipynb`,
+    `notebooks/analysis.ipynb` → `<repo>/notebooks/analysis.ipynb`.
+  - `--root ~/proj` 처럼 루트를 따로 지정하면 상대경로는 그 폴더 기준이 됩니다
+    (예: `--root ~/proj analysis.ipynb` → `~/proj/analysis.ipynb`).
 - 노트북에 **실행 출력이 이미 있으면** 그대로 싣고 변환합니다.
 - 출력이 **없으면** 스킬이 먼저 물어봅니다 — "실행해서 결과까지 실을까요(ⓐ), 코드만(ⓑ)?"
   - ⓐ + CPU 노트북 → `--execute` (표준 라이브러리 실행, 추가 설치 불필요) → `analysis_executed.ipynb` 생성 후 변환
@@ -65,27 +74,34 @@
 
 ### 예시 2 — 한 노트북을 장→절 여러 페이지로 (sections 모드)
 
-`07_bert_pipeline.ipynb` 같은 "한 챕터" 노트북을 실습/해부/변형/정리 절로 나눠 출판할 때:
+내용이 긴 "한 챕터" 노트북을 여러 절로 나눠 출판할 때 — **설정 파일 없이** 동작합니다:
 
 ```
-/notebook-to-wikidocs 07_bert_pipeline --split sections --config config/neuqes-101.json
+/notebook-to-wikidocs report.ipynb --split sections
 ```
 
-(`config/neuqes-101.json` 의 `section_rules`·`labels`·`book_title` 을 복사해 자기 키워드로 바꿔 쓰면 됩니다.)
+- 분할 기준은 **노트북 안의 `## `(H2) 헤딩**입니다. 
+  노트북에 적어둔 헤딩 구조를 그대로 따릅니다(한글·영문 무관).
+  - H1 제목과 첫 H2 이전 내용 → **개요 페이지**(`report.md`) + 자동 생성된 "이 장의 구성" 로드맵
+  - 각 `## ` 헤딩 → 문서 순서대로 `report-1.md`, `report-2.md`, … 서브페이지(절 제목 = 헤딩 텍스트)
+- 노트북에 `## ` 헤딩이 없으면 절로 나눌 게 없어 개요 1페이지만 생깁니다 → 이때는 `--split single` 을 쓰세요.
 
-생기는 파일:
+> 스킬로 호출하면, 변환 전에 Claude 가 노트북의 H2 목록을 보여주고 "이대로 나눌까요, 몇 개를 한 절로
+> 묶을까요?"를 먼저 확인합니다. JSON 을 직접 작성할 필요는 없습니다.
+
+생기는 파일(노트북에 `## ` 헤딩이 3개일 때):
 
 ```
 프로젝트/
+├─ report.ipynb              # 원본 (그대로)
 ├─ pages/
-│  ├─ 07-bert_pipeline.md             # 장 개요 + "이 장의 구성" 로드맵
-│  ├─ 07-bert_pipeline-practice.md    # 실습 절
-│  ├─ 07-bert_pipeline-anatomy.md     # 해부 절
-│  ├─ 07-bert_pipeline-variation.md   # 변형 절
-│  └─ 07-bert_pipeline-wrapup.md      # 정리·FAQ 절
+│  ├─ report.md              # 장 개요 + "이 장의 구성" 로드맵
+│  ├─ report-1.md            # 첫 번째 ## 절 (제목 = 그 헤딩 텍스트)
+│  ├─ report-2.md            # 두 번째 ## 절
+│  └─ report-3.md            # 세 번째 ## 절
 ├─ assets/
-│  └─ 07-bert_pipeline-out1.png       # 그림 (상대경로 ../assets/ 로 참조)
-└─ TOC.md                             # 해당 장 블록만 교체(다른 장 보존)
+│  └─ report-out1.png        # 그림 (상대경로 ../assets/ 로 참조)
+└─ TOC.md                    # 개요 + 각 절 항목 추가/갱신
 ```
 
 ### 예시 3 — 여러 노트북 일괄 변환
@@ -105,6 +121,11 @@ python3 "${CLAUDE_PLUGIN_ROOT}/skills/notebook-to-wikidocs/scripts/check_wikidoc
 
 전자책 작성 규칙(본문 H1 금지, 헤딩 빈 줄, 외부 이미지·raw HTML·수평선 금지, 각주 유니크 등)을
 `pages/*.md` 전수 검사합니다. 위반이 있으면 종료코드 1.
+
+> **노트북에 H1(`# `)이 여러 번 나오면**: WikiDocs 전자책은 페이지 제목과 충돌하므로 **본문에 H1 이
+> 없어야** 합니다. 변환기는 **맨 처음 H1 하나만 페이지 제목**으로 쓰고 본문에서 떼어내며, **두 번째
+> 이후의 H1 은 자동으로 H2(`## `)로 강등**해 규칙 위반을 막습니다(변환 로그에 `H1→H2` 건수로 표시).
+> sections 모드에서도 두 번째 이후 H1 은 새 절을 만들지 않고 본문 H2 로 들어갑니다 — 절을 나누려면 `## ` 를 쓰세요.
 
 > 산출물(`pages/`·`assets/`·`TOC.md`)을 WikiDocs 에 올리는 방법: `pages/*.md` 내용을 각 페이지에 붙여넣고,
 > `assets/*.png` 는 WikiDocs 에 업로드(외부 이미지 링크는 전자책에서 깨지므로), `TOC.md` 순서대로 목차를 구성합니다.
