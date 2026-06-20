@@ -745,11 +745,12 @@ EXECUTED_SUFFIX = "_executed"  # 실행본 명명 규약: <소스>_executed.ipyn
 
 
 def discover_notebooks(root: Path) -> dict[str, tuple[int | None, str, Path]]:
-    """{name: (num, slug, nb_path)} — root 아래 .ipynb 자동 발견.
+    """{name: (num, slug, nb_path)} — root 아래 .ipynb 자동 발견(하위 폴더까지 재귀).
 
-    1) 폴더 규약: NN_slug/NN_slug.ipynb (폴더와 노트북 이름이 같을 때)
-    2) 평평한 .ipynb (루트 직속, 러너·체크포인트 제외)
+    1) 폴더 규약: NN_slug/NN_slug.ipynb (폴더와 노트북 이름이 같을 때) — 루트 직속 우선
+    2) 그 외 임의 위치의 .ipynb (루트 직속·하위 폴더 모두; 러너·체크포인트·산출물 폴더 제외)
     실행본(<이름>_executed.ipynb)은 소스가 아니므로 발견 대상에서 제외한다.
+    같은 stem 이 여러 곳이면 경로 정렬상 먼저 오는 것을 쓴다.
     """
     found: dict[str, tuple[int | None, str, Path]] = {}
 
@@ -762,16 +763,19 @@ def discover_notebooks(root: Path) -> dict[str, tuple[int | None, str, Path]]:
         slug = m.group(2) if m else name
         found.setdefault(name, (num, slug, nb))
 
-    # 폴더 규약 우선
+    # 루트 직속 폴더 규약 우선(NN_slug/NN_slug.ipynb 가 stem 충돌 시 이기도록 먼저 등록)
     for d in sorted(root.iterdir()):
         if not d.is_dir() or d.name in ("assets", "pages") or d.name.startswith("."):
             continue
         nb = d / f"{d.name}.ipynb"
         if nb.exists():
             add(nb)
-    # 루트 직속 .ipynb
-    for nb in sorted(root.glob("*.ipynb")):
-        if ".ipynb_checkpoints" in str(nb):
+    # 루트 직속 + 하위 폴더 재귀 .ipynb (숨김·체크포인트·산출물 폴더 제외)
+    for nb in sorted(root.rglob("*.ipynb")):
+        rel = nb.relative_to(root)
+        if any(part.startswith(".") for part in rel.parts):   # .ipynb_checkpoints·.git 등
+            continue
+        if rel.parts and rel.parts[0] in ("assets", "pages"):
             continue
         add(nb)
     return found

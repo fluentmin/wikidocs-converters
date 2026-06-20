@@ -87,7 +87,8 @@ SK="${CLAUDE_PLUGIN_ROOT:-.}/skills/convert"   # scripts/ 가 이 아래
 - **ⓐ 실행 원함** → **colab-cli** 로 Colab VM 에서 실행해 **결과를 소스 옆 `<이름>_executed.ipynb` 로
   저장**한 뒤 ② 변환(아래). CPU·GPU 노트북 모두 colab-cli 로 실행한다(변환기는 로컬에서 직접 실행하지
   않는다). VM 이 저장소를 clone 해 **이름으로** 노트북을 찾으므로, 대상 노트북은 **푸시된 git 저장소
-  안**에 있어야 한다(아니면 사용자에게 안내). 브랜치는 로컬 현재 브랜치를 자동 인식한다(master 고정 아님).
+  안**에 있어야 한다(아니면 사용자에게 안내). 루트 직속·`NN_slug/` 폴더는 물론 `my-test-notebooks/foo.ipynb`
+  같은 **하위 폴더도 재귀로 찾는다**. 브랜치는 로컬 현재 브랜치를 자동 인식한다(master 고정 아님).
   - **private repo**: VM 은 익명 HTTPS 로 clone 하므로 토큰이 필요하다. 러너가 `gh auth token`
     (또는 `GH_TOKEN`/`GITHUB_TOKEN`)을 찾아 clone 에 주입한다. 토큰이 없으면 **VM 할당 전에** 멈추고
     안내하므로(과금 방지), `gh auth login` 을 먼저 하거나 저장소를 잠시 public 으로 전환하면 된다.

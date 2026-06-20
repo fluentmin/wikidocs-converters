@@ -80,17 +80,20 @@ def main():
         return nb_path.parent / (nb_path.stem + EXECUTED_SUFFIX + ".ipynb")
 
     def notebooks():
-        """[(name, nb_path)] — NN_slug/NN_slug.ipynb 폴더 규약 + 루트 직속 *.ipynb(러너·_executed 제외)."""
+        """[(name, nb_path)] — repo 전체를 재귀 탐색해 stem 으로 매핑한다.
+        루트 직속·NN_slug/NN_slug.ipynb 폴더 규약은 물론, my-test-notebooks/foo.ipynb 같은 임의
+        하위 폴더의 *.ipynb 도 찾는다. 러너·_executed·숨김 폴더(.git·.ipynb_checkpoints)는 제외.
+        같은 stem 이 여러 곳이면 경로 정렬상 먼저 오는 것을 쓴다."""
         out = {}
-        for d in sorted(work.glob("[0-9]*_*")):
-            if not d.is_dir():
+        for nb in sorted(work.rglob("*.ipynb")):
+            rel = nb.relative_to(work)
+            if any(part.startswith(".") for part in rel.parts):   # .git, .ipynb_checkpoints 등
                 continue
-            nb = d / (d.name + ".ipynb")
-            if nb.exists():
-                out[d.name] = nb
-        for nb in sorted(work.glob("*.ipynb")):
-            if nb.stem not in RUNNER_NAMES and not nb.stem.endswith(EXECUTED_SUFFIX):
-                out.setdefault(nb.stem, nb)
+            if rel.parts and rel.parts[0] in ("assets", "pages"):  # 산출물 폴더 제외
+                continue
+            if nb.stem in RUNNER_NAMES or nb.stem.endswith(EXECUTED_SUFFIX):
+                continue
+            out.setdefault(nb.stem, nb)
         return list(out.items())
 
     def source_hash(nb_path):

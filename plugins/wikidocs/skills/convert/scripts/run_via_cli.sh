@@ -8,10 +8,14 @@
 # GH_TOKEN/GITHUB_TOKEN 또는 `gh auth token`(gh 로그인돼 있으면 자동)을 찾아 clone 에 주입한다.
 # 토큰이 없으면 VM 할당 전에 미리 막는다(과금 방지).
 #
-# 사용 (PROJECT_ROOT 미지정 시 현재 git 저장소 루트, REPO 는 git origin 에서 자동 인식)
+# 노트북은 루트 직속·NN_slug/ 폴더는 물론 하위 폴더(예: my-test-notebooks/foo.ipynb)도 재귀로 찾는다.
+#
+# 사용 (PROJECT_ROOT/--root 미지정 시 현재 git 저장소 루트, REPO 는 git origin 에서 자동 인식)
 #   ./run_via_cli.sh                       # 전 노트북
 #   ./run_via_cli.sh 7 24                  # 해당 것만 (번호/폴더명/이름)
 #   ./run_via_cli.sh 07_bert_pipeline
+#   ./run_via_cli.sh sub/dir/foo.ipynb     # 하위 폴더 경로도 가능
+#   ./run_via_cli.sh --root ~/proj 7       # 루트 플래그(build/check 와 동일). PROJECT_ROOT 보다 우선
 #   FORCE=1 ./run_via_cli.sh 7             # 로컬에 ok 여도 강제 재실행
 #   GPU=L4 ./run_via_cli.sh                # GPU 종류 변경
 #   PROJECT_ROOT=~/proj ./run_via_cli.sh   # 루트 직접 지정(기본: git rev-parse --show-toplevel)
@@ -32,8 +36,21 @@ set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"           # 이 스크립트(스킬 scripts/)
 EXECPY="$HERE/colab_cli_exec.py"
 
-# 프로젝트 루트: 명시 없으면 현재 git 저장소 루트, 그것도 없으면 cwd.
-ROOT="${PROJECT_ROOT:-}"
+# 인자에서 --root <path> 추출(나머지는 노트북 spec). build/check 스크립트와 플래그 일관성을 맞춘다
+# (SKILL.md 가 --root 를 넘기므로 spec 으로 오인해 "알 수 없는 대상: --root" 나던 문제 방지).
+ARG_ROOT=""
+specs=()
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --root)   ARG_ROOT="${2:-}"; shift; [ "$#" -gt 0 ] && shift ;;
+        --root=*) ARG_ROOT="${1#--root=}"; shift ;;
+        *)        specs+=("$1"); shift ;;
+    esac
+done
+set -- ${specs[@]+"${specs[@]}"}
+
+# 프로젝트 루트: --root > PROJECT_ROOT > 현재 git 저장소 루트 > cwd.
+ROOT="${ARG_ROOT:-${PROJECT_ROOT:-}}"
 if [ -z "$ROOT" ]; then
     ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 fi
@@ -96,10 +113,19 @@ try:
 except Exception: sys.exit(1)' "$1" 2>/dev/null
 }
 
+# 로컬에서 stem(이름)에 해당하는 소스 노트북 파일 경로를 찾는다(하위 폴더까지 재귀).
+# 숨김(.git·.ipynb_checkpoints)·러너·_executed 는 제외. 못 찾으면 빈 문자열.
+find_nb() {
+    local name="$1"
+    [ -f "$ROOT/$name/$name.ipynb" ] && { echo "$ROOT/$name/$name.ipynb"; return; }   # NN_slug 폴더 우선
+    [ -f "$ROOT/$name.ipynb" ] && { echo "$ROOT/$name.ipynb"; return; }                # 루트 직속
+    find "$ROOT" -type f -name "$name.ipynb" -not -path '*/.*' 2>/dev/null | sort | head -1
+}
+
 # 로컬 소스 노트북이 있는 디렉터리(실행본은 그 옆에 <이름>_executed.ipynb 로 둔다).
 src_dir() {
-    local name="$1"
-    if [ -f "$ROOT/$name/$name.ipynb" ]; then echo "$ROOT/$name"; else echo "$ROOT"; fi
+    local f; f="$(find_nb "$1")"
+    if [ -n "$f" ]; then dirname "$f"; else echo "$ROOT"; fi
 }
 # 로컬 실행본 경로
 exec_path() { echo "$(src_dir "$1")/${1}_executed.ipynb"; }
@@ -107,27 +133,27 @@ exec_path() { echo "$(src_dir "$1")/${1}_executed.ipynb"; }
 # 인자(번호/폴더명/이름/.ipynb 경로) → 실행 대상 이름(노트북 stem). 못 찾으면 1.
 # 주의: VM 이 REPO 를 clone 해 '이름'으로 찾으므로, 대상 노트북은 푸시된 저장소 안에 있어야 한다.
 resolve() {
-    local spec="$1" nn m base
+    local spec="$1" nn base found
     case "$spec" in
         *.ipynb)                                                        # 절대/상대 .ipynb 경로
             base="$(basename "$spec" .ipynb)"; echo "$base"; return 0 ;;
     esac
     [ -d "$ROOT/$spec" ] && { echo "$spec"; return 0; }                  # NN_slug/ 폴더
-    [ -f "$ROOT/$spec.ipynb" ] && { echo "$spec"; return 0; }            # 루트 직속 이름.ipynb
+    [ -n "$(find_nb "$spec")" ] && { echo "$spec"; return 0; }          # 이름.ipynb (루트·하위 폴더)
     if printf '%s' "$spec" | grep -qE '^[0-9]+$'; then
-        nn=$(printf '%02d' "$spec")
-        m=$(cd "$ROOT" && { ls -d "${nn}"_*/ 2>/dev/null | head -1 | sed 's#/##'; \
-                            ls "${nn}"_*.ipynb 2>/dev/null | head -1 | sed 's#\.ipynb$##'; } | head -1)
-        [ -n "$m" ] && { echo "$m"; return 0; }
+        nn=$(printf '%02d' "$spec")                                     # 번호 → NN_*.ipynb (하위 폴더 포함)
+        found="$(find "$ROOT" -type f -name "${nn}_*.ipynb" -not -path '*/.*' -not -name '*_executed.ipynb' 2>/dev/null | sort | head -1)"
+        [ -n "$found" ] && { basename "$found" .ipynb; return 0; }
     fi
     return 1
 }
 
-# 전체 대상 목록(이름): NN_slug/ 폴더 + 루트 직속 .ipynb(러너·_executed 제외).
+# 전체 대상 목록(이름, stem): ROOT 아래 모든 .ipynb 재귀(숨김·러너·_executed 제외).
 all_targets() {
-    (cd "$ROOT" && ls -d [0-9]*_*/ 2>/dev/null | sed 's#/##'
-     cd "$ROOT" && ls *.ipynb 2>/dev/null | sed 's#\.ipynb$##' \
-        | grep -vE '^(run_on_colab|run_via_cli|colab_cli_exec)$|_executed$') | sort -u
+    find "$ROOT" -type f -name '*.ipynb' -not -path '*/.*' 2>/dev/null \
+        | sed 's#.*/##; s#\.ipynb$##' \
+        | grep -vE '^(run_on_colab|run_via_cli|colab_cli_exec)$|_executed$' \
+        | sort -u
 }
 
 run_one() {  # $1=name — 새 VM 1개로 실행 → executed/<name>.ipynb 회수 → VM 종료
