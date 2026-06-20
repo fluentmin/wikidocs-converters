@@ -139,4 +139,12 @@ uv tool install "git+https://github.com/googlecolab/google-colab-cli"
 colab --auth=oauth2 whoami        # 동의 화면 "모두 선택". 과금 방지로 결제수단 없는 무료 계정 권장.
 ```
 
+- **브랜치**: 로컬 현재 브랜치를 자동 인식해 VM 이 clone 합니다(`main`·`master` 등 고정 아님).
+- **private 저장소**: Colab VM 은 익명 HTTPS 로 clone 하므로 토큰이 필요합니다. **`gh auth login` 권장** —
+  OS 키체인에 저장되어 토큰을 명령줄에 타이핑할 필요가 없고, 러너가 런타임에 변수로만 읽어 clone 에
+  주입합니다(화면·로그로 출력하지 않고 colab 호출 출력에서도 `***` 로 마스킹). `GH_TOKEN`/`GITHUB_TOKEN`
+  환경변수도 쓸 수 있지만, 토큰을 직접 노출하지 않으려면 키체인 방식을 권합니다. 토큰이 없으면 VM 할당
+  전에 멈추고 안내합니다 — 저장소를 잠시 public 으로 전환했다가 끝나고 되돌려도 됩니다. public 저장소는
+  토큰 없이 그대로 동작합니다.
+
 자세한 사용법은 플러그인 스킬 문서(`SKILL.md`) 참고.

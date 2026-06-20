@@ -87,7 +87,14 @@ SK="${CLAUDE_PLUGIN_ROOT:-.}/skills/convert"   # scripts/ 가 이 아래
 - **ⓐ 실행 원함** → **colab-cli** 로 Colab VM 에서 실행해 **결과를 소스 옆 `<이름>_executed.ipynb` 로
   저장**한 뒤 ② 변환(아래). CPU·GPU 노트북 모두 colab-cli 로 실행한다(변환기는 로컬에서 직접 실행하지
   않는다). VM 이 저장소를 clone 해 **이름으로** 노트북을 찾으므로, 대상 노트북은 **푸시된 git 저장소
-  안**에 있어야 한다(아니면 사용자에게 안내).
+  안**에 있어야 한다(아니면 사용자에게 안내). 브랜치는 로컬 현재 브랜치를 자동 인식한다(master 고정 아님).
+  - **private repo**: VM 은 익명 HTTPS 로 clone 하므로 토큰이 필요하다. 러너가 `gh auth token`
+    (또는 `GH_TOKEN`/`GITHUB_TOKEN`)을 찾아 clone 에 주입한다. 토큰이 없으면 **VM 할당 전에** 멈추고
+    안내하므로(과금 방지), `gh auth login` 을 먼저 하거나 저장소를 잠시 public 으로 전환하면 된다.
+    - **토큰은 모델에 노출하지 않는다**: `gh auth login`(OS 키체인)을 권장한다 — 토큰을 명령줄에 타이핑하지
+      말 것(`GH_TOKEN=... ` 를 대화/명령에 inline 하면 모델 컨텍스트에 들어간다). 러너는 토큰을 런타임에
+      변수로만 읽고 stdout 으로 출력하지 않으며, colab 호출 출력에서도 토큰 문자열을 `***` 로 마스킹한다.
+  - **public repo**: 토큰 없이 그대로 동작한다.
 
 **colab-cli (GPU 실행, 권장)** — [`google-colab-cli`](https://github.com/googlecolab/google-colab-cli) 로
 **터미널에서** VM 할당→실행→회수. 결과를 로컬 소스 옆에 받아 **PAT 불필요**, 인증 1회면 스킬이 직접 실행.

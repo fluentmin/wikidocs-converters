@@ -4,10 +4,11 @@
 로컬 래퍼 `run_via_cli.sh` 가 호출한다(직접 실행할 일은 없음):
 
     colab run --keep -s <세션> --gpu T4 --timeout 120 \
-        colab_cli_exec.py <REPO> <BRANCH> <TARGET> [--force]
+        colab_cli_exec.py <REPO> <BRANCH> <TARGET> [--force] [--token TOKEN]
 
 `colab run` 이 이 파일을 VM 커널에 올려 실행하면:
-  1) REPO 를 clone (VM 은 clone 만 — 원본 push 권한 불필요)
+  1) REPO 를 clone (VM 은 clone 만 — 원본 push 권한 불필요).
+     --token 이 오면 x-access-token 으로 주입해 private repo 도 clone(없으면 익명 HTTPS).
   2) 대상 노트북을 NotebookClient 로 끝까지 실행
   3) 출력 포함 <소스옆>/<이름>_executed.ipynb 를 VM 에 저장(실패해도 다음 노트북 계속)
   4) 무손실 회수용 base64 사본을 플랫 스테이징(/content/_wd_out/<이름>_executed.ipynb.b64) 에 저장
@@ -43,22 +44,30 @@ def fmt_dur(sec):
 
 def main():
     if len(sys.argv) < 3:
-        print("usage: colab_cli_exec.py <REPO> <BRANCH> [TARGET] [--force]", file=sys.stderr)
+        print("usage: colab_cli_exec.py <REPO> <BRANCH> [TARGET] [--force] [--token TOKEN]", file=sys.stderr)
         sys.exit(2)
     repo = sys.argv[1]
     branch = sys.argv[2]
     target = sys.argv[3] if len(sys.argv) > 3 and not sys.argv[3].startswith("--") else "stale"
     force = "--force" in sys.argv
+    # private repo clone 용 토큰(있을 때만). VM 은 익명 HTTPS 라 토큰 없이는 private 접근 불가.
+    token = ""
+    if "--token" in sys.argv:
+        i = sys.argv.index("--token")
+        if i + 1 < len(sys.argv):
+            token = sys.argv[i + 1]
 
     subprocess.run([sys.executable, "-m", "pip", "-q", "install", "nbclient", "nbformat"], check=True)
     import nbformat
     from nbclient import NotebookClient
     from nbclient.exceptions import CellExecutionError
 
+    clone_url = (f"https://x-access-token:{token}@github.com/{repo}.git"
+                 if token else f"https://github.com/{repo}.git")
     work = Path("/content") / repo.split("/")[-1]
     if not work.is_dir():
         subprocess.run(["git", "clone", "-q", "--depth", "1", "--branch", branch,
-                        f"https://github.com/{repo}.git", str(work)], check=True)
+                        clone_url, str(work)], check=True)
     else:
         subprocess.run(["git", "-C", str(work), "checkout", "-q", branch], check=True)
         subprocess.run(["git", "-C", str(work), "pull", "-q", "--depth", "1"], check=False)
