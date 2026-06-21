@@ -5,8 +5,10 @@
 ## **사람이 해야하는** 최초 작업(GitHub과 WikiDocs 연동)
 먼저 WikiDocs에 회원가입 및 로그인한 후 https://wikidocs.net/profile/edit/book 에서 [새 책 만들기 (깃허브 연동)](https://wikidocs.net/321336)를 참고하여 깃허브와 연동된 WikiDocs 책을 만들어주세요. 책을 만들고 나면 `README.md`, `TOC.md` 중 기존 GitHub repo에 없는 파일이 push됩니다. 이 플러그인을 사용하여 변환할 파일은 해당 repo 하위에 위치시켜주세요.
 
-- **현재 지원**: Jupyter 노트북(.ipynb) — 단순 파싱이 아니라 **코드의 실제 실행 결과(표·로그·그림)까지** 싣습니다.
-- **향후 계획**: docx · pdf · pptx · md 등 포맷을 **같은 `/wikidocs:convert` 스킬**에 추가합니다(확장자로 분기).
+- **현재 지원**:
+  - Jupyter 노트북(.ipynb) — 단순 파싱이 아니라 **코드의 실제 실행 결과(표·로그·그림)까지** 싣습니다.
+  - 마크다운(.md) — 이미 마크다운이라 변환 엔진 없이 **이미지 로컬화 + 전자책 sanitize** 로 정리합니다(외부 이미지는 `assets/` 로 내려받아 PDF/EPUB 누락 방지).
+- **향후 계획**: docx · pdf · pptx 등 포맷을 **같은 `/wikidocs:convert` 스킬**에 추가합니다(확장자로 분기).
 
 ## 플러그인 설치
 
@@ -22,12 +24,14 @@ claude # Claude Code CLI에서 아래 명령어 실행
 
 ### `wikidocs` — 문서 → WikiDocs 변환기
 
-스킬 하나(`/wikidocs:convert`)가 파일 확장자로 변환기를 고릅니다. 현재 `.ipynb` 경로(스크립트 4종):
+스킬 하나(`/wikidocs:convert`)가 파일 확장자로 변환기를 고릅니다. 스크립트 구성:
 
 | 파일 | 역할 |
 |---|---|
-| `scripts/build_wikidocs.py` | 노트북 → `pages/*.md` + `assets/` + `TOC.md` 변환(전자책 안전 출력) |
-| `scripts/check_wikidocs_md.py` | 전자책 작성 규칙 린터(회귀·수기편집 점검) |
+| `scripts/wikidocs_common.py` | **포맷 무관 공용 코어** — 전자책 sanitize·H2 분할·이미지 로컬화·표 렌더·TOC upsert. 모든 변환기가 공유 |
+| `scripts/build_wikidocs.py` | **(.ipynb)** 노트북 → `pages/*.md` + `assets/` + `TOC.md`(코드의 실제 실행 결과까지) |
+| `scripts/convert_markdown.py` | **(.md)** 마크다운 → 동일 산출물(이미지 로컬화 + 전자책 sanitize, 변환 엔진 불필요) |
+| `scripts/check_wikidocs_md.py` | 전자책 작성 규칙 린터(포맷 무관 — 산출물 `.md` 검사) |
 | `scripts/run_via_cli.sh` | google-colab-cli 로 실행본(`<이름>_executed.ipynb`) 자동 생성(macOS/Linux) |
 | `scripts/colab_cli_exec.py` | 위 러너가 Colab VM 에서 돌리는 실행기 |
 
@@ -38,8 +42,8 @@ claude # Claude Code CLI에서 아래 명령어 실행
 ## 사용 예시 — 실제 노트북에 적용
 
 설치 후 `/wikidocs:convert <파일>` 로 호출합니다(`disable-model-invocation` 이라 사용자가 직접 호출).
-스킬이 확장자를 보고 변환기를 고릅니다 — 아래 예시는 모두 `.ipynb`(현재 지원 포맷)입니다.
-대상 노트북이 있는 폴더가 작업 디렉터리이거나 `--root` 로 지정합니다.
+스킬이 확장자를 보고 변환기를 고릅니다 — 예시 1~3 은 `.ipynb`, 예시 4 는 `.md` 입니다.
+대상 파일이 있는 폴더가 작업 디렉터리이거나 `--root` 로 지정합니다.
 
 ### 예시 1 — 노트북 1개 변환 (기본 single 모드)
 
@@ -114,6 +118,34 @@ claude # Claude Code CLI에서 아래 명령어 실행
 ```
 
 각 노트북은 위와 같은 `pages/*.md` + `assets/*.png` 를 만들고, `TOC.md` 에 항목이 번호 순서로 쌓입니다.
+
+### 예시 4 — 마크다운(.md) 변환
+
+이미 작성해 둔 `.md` 문서를 그대로 WikiDocs 산출물로 만듭니다(변환 엔진 없이 정리만).
+
+```
+/wikidocs:convert guide.md                 # 문서 1개 = 페이지 1개
+/wikidocs:convert 07_guide.md --split      # H2(## …) 단위로 개요 + 절 분할
+```
+
+- 노트북과 **같은 산출물·전자책 규칙·린터**를 따릅니다(첫 H1 제거, H1→H2 강등, 헤딩 빈 줄, 각주 유니크 등).
+- **이미지 로컬화**: 본문의 외부(`http(s)`)·로컬 상대경로 이미지를 `assets/<이름>-imgK.확장자` 로
+  내려받거나 복사하고 `../assets/…` 로 바꿉니다 — 전자책 PDF/EPUB 의 외부 이미지 누락을 막습니다.
+  - 외부 이미지를 받을 때 **네트워크를 씁니다**. 원치 않으면 `--no-localize-images` 로 끕니다.
+- `--split` 시, **각주 정의와 참조가 서로 다른 절로 갈리면** 페이지가 분리돼 깨집니다(린터가 잡음).
+  문서 끝에 각주를 몰아둔 글은 `--split` 없이 변환하세요.
+
+```
+프로젝트/
+├─ 07_guide.md               # 원본 (그대로)
+├─ pages/
+│  ├─ 07-guide.md            # (--split 시) 개요 + 로드맵 / (기본) 문서 전체 1페이지
+│  ├─ 07-guide-1.md          # (--split 시) 첫 ## 절
+│  └─ 07-guide-2.md          # (--split 시) 두 번째 ## 절
+├─ assets/
+│  └─ 07-guide-img1.png      # 로컬화한 이미지
+└─ TOC.md                    # 항목 추가/갱신
+```
 
 ### 변환 후 검증 (선택)
 

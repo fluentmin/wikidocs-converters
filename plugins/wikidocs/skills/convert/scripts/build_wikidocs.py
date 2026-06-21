@@ -32,6 +32,10 @@
   python3 build_wikidocs.py path/to/notebook.ipynb
   python3 build_wikidocs.py report.ipynb --split               # H2 헤딩 단위 분할(= --split sections)
   python3 build_wikidocs.py --all --root ~/proj
+
+전자책 안전 출력·TOC·헤딩 정리 등 포맷 무관 코어는 wikidocs_common 에서 가져온다(정적 문서
+변환기 convert_markdown.py 등과 공유). 이 파일은 노트북 고유 부분(셀 출력 렌더·실행본 선택·
+키워드 분할)만 담는다.
 """
 
 from __future__ import annotations
@@ -39,62 +43,17 @@ from __future__ import annotations
 import argparse
 import base64
 import json
-import re
 import sys
 import traceback
-from html import unescape
-from html.parser import HTMLParser
 from pathlib import Path
 
-COLAB_BADGE_RE = re.compile(r"^\s*\[!\[.*?Colab.*?\]\(.*?\)\]\(.*?\)\s*$", re.IGNORECASE)
-HEADER_RE = re.compile(r"^(#{1,6})\s+(.*)$")
-EMOJI_RE = re.compile(r"^[\s←-⇿⌀-➿⬀-⯿️\U0001F000-\U0001FAFF]+")
-ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
-LEADING_NUM_RE = re.compile(r"^(\d+)[_-](.+)$")  # '07_bert_pipeline' → (7, 'bert_pipeline')
-H1_CHAPTER_PREFIX_RE = re.compile(r"^\s*Chapter\s+\d+\s*[.．]\s*")
-
-# 노이즈 필터 — ML 노트북 일반(다운로드·인증·생성 보일러플레이트). 책 내용 아님.
-SKIP_PATTERNS = (
-    "TqdmWarning:",
-    "IProgress not found",
-    "Requirement already satisfied:",
-    "WARNING: Running pip",
-    "[notice] A new release of pip",
-    "notice] A new release of pip",
-    "To update, run:",
-    "huggingface_hub/utils/_auth.py",
-    "secret value from your vault",
-    "not authenticated with the Hugging Face Hub",
-    "If the error persists, please let us know",
-    "warnings.warn(",
-    "unauthenticated requests to the HF Hub",
-    "Setting `pad_token_id`",
-    "`max_new_tokens`",
-    "clean_up_tokenization_spaces",
-    "Passing `generation_config`",
-    "aligned accordingly, being updated with the tokenizer",
+from wikidocs_common import (
+    DEFAULT_BOOK_TITLE, DEFAULT_LABELS, DEFAULT_OUTPUT_STYLE, OUTPUT_STYLES,
+    H1_CHAPTER_PREFIX_RE, LEADING_NUM_RE,
+    _clean_heading_text, _clean_text_output, _demote_first_header, _first_header,
+    _html_tables_to_text, _output_box, _sanitize_md_cell, _strip_colab_badge,
+    _strip_header_emoji, upsert_toc,
 )
-
-TQDM_BAR_RE = re.compile(r"\d+%\s*\|")
-
-# 긴 산문 줄(리뷰·생성문)은 트렁케이트 — EPUB <pre> 안은 안 접혀 잘림. 표(| 포함)는 보존.
-MAX_OUTPUT_LINE_CHARS = 160
-TRUNC_KEEP_CHARS = 140
-PROSE_MIN_TOKENS = 12
-MAX_OUTPUT_LINES = 40
-MAX_OUTPUT_CHARS = 2000
-
-
-def _truncate_long_lines(lines: list[str]) -> list[str]:
-    out = []
-    for ln in lines:
-        if (len(ln) > MAX_OUTPUT_LINE_CHARS and "|" not in ln
-                and len(ln.split()) >= PROSE_MIN_TOKENS):
-            omitted = len(ln) - TRUNC_KEEP_CHARS
-            ln = ln[:TRUNC_KEEP_CHARS].rstrip() + f" …(뒤 {omitted}자 생략)"
-        out.append(ln)
-    return out
-
 
 # 기본 분할 규칙(--split sections 이면서 config 미지정 시의 폴백) — 한글 커리큘럼 키워드.
 # 일반 프로젝트는 --config 로 자기 키워드를 주거나, 기본값(single)을 쓴다.
@@ -108,33 +67,13 @@ DEFAULT_SUBPAGES: list[tuple[str, str, str]] = [
     ("variation", "variation", "변형"), ("wrapup", "wrapup", "정리와 FAQ"),
 ]
 
-DEFAULT_LABELS = {
-    "output": "▶ 실행 결과",
-    "setup": "환경 준비",
-    "roadmap": "이 장의 구성",
-}
-DEFAULT_BOOK_TITLE = "WikiDocs"
-
 
 # --------------------------------------------------------------------------- #
-# 텍스트 유틸
+# 노트북 셀 유틸
 # --------------------------------------------------------------------------- #
 def _cell_text(cell: dict) -> str:
     src = cell.get("source", "")
     return src if isinstance(src, str) else "".join(src)
-
-
-def _clean_heading_text(text: str) -> str:
-    text = re.sub(r"^\s*\d+[.)]\s*", "", text.strip())
-    return EMOJI_RE.sub("", text).strip()
-
-
-def _first_header(md: str) -> tuple[int, str] | None:
-    for line in md.splitlines():
-        m = HEADER_RE.match(line)
-        if m:
-            return len(m.group(1)), m.group(2).strip()
-    return None
 
 
 def _classify(header_text: str, section_rules: list[tuple[str, str]]) -> str:
@@ -144,232 +83,9 @@ def _classify(header_text: str, section_rules: list[tuple[str, str]]) -> str:
     return "overview"
 
 
-def _strip_colab_badge(md: str) -> str:
-    return "\n".join(ln for ln in md.splitlines() if not COLAB_BADGE_RE.match(ln)).strip("\n")
-
-
-def _demote_first_header(md: str) -> str:
-    lines = md.splitlines()
-    for i, line in enumerate(lines):
-        if HEADER_RE.match(line):
-            del lines[i]
-            break
-    return "\n".join(lines).strip("\n")
-
-
-def _strip_header_emoji(md: str) -> str:
-    out = []
-    for line in md.splitlines():
-        m = HEADER_RE.match(line)
-        if m:
-            out.append(f"{m.group(1)} {_clean_heading_text(m.group(2))}")
-        else:
-            out.append(line)
-    return "\n".join(out)
-
-
-# 전자책 작성 규칙(https://wikidocs.net/198723) 방어용 패턴
-HR_LINE_RE = re.compile(r"^\s*(-{3,}|\*{3,}|_{3,})\s*$")
-H1_LINE_RE = re.compile(r"^#\s+(.*)$")
-HEADING_RE2 = re.compile(r"^#{1,6}\s")
-WIN_PATH_RE = re.compile(r"[A-Za-z]:\\[\w.\\-]+")
-CODE_MATH_RE = re.compile(r"`[^`]*`|\$[^$]+\$")
-RAW_HTML_RE = re.compile(r"</?[a-zA-Z][a-zA-Z0-9]*(?:\s[^<>]*)?/?>")
-EXT_IMG_RE = re.compile(r"!\[[^\]]*\]\((https?://[^)\s]+)")
-INLINE_CODE_RE = re.compile(r"`[^`]*`")
-FOOTNOTE_RE = re.compile(r"\[\^([^\]]+)\]")
-
-
-def _wrap_win_paths(ln: str, stats: dict) -> str:
-    spans: list[str] = []
-
-    def _stash(m):
-        spans.append(m.group(0))
-        return f"\x00{len(spans) - 1}\x00"
-
-    masked = CODE_MATH_RE.sub(_stash, ln)
-    cnt = [0]
-
-    def _wrap(m):
-        cnt[0] += 1
-        return f"`{m.group(0)}`"
-
-    masked = WIN_PATH_RE.sub(_wrap, masked)
-    if not cnt[0]:
-        return ln
-    stats["win_paths"] += cnt[0]
-    return re.sub(r"\x00(\d+)\x00", lambda m: spans[int(m.group(1))], masked)
-
-
-def _sanitize_md_cell(md: str, stem: str, stats: dict) -> str:
-    """마크다운 셀을 전자책 규칙(https://wikidocs.net/198723)에 맞게 방어 정리. 코드펜스 안은 손대지 않음."""
-    out: list[str] = []
-    fence = False
-    pending_blank = False
-    for ln in md.split("\n"):
-        if pending_blank:
-            if ln.strip() != "":
-                out.append("")
-                stats["heading_blanks"] += 1
-            pending_blank = False
-        if ln.lstrip().startswith("```"):
-            fence = not fence
-            out.append(ln)
-            continue
-        if fence:
-            out.append(ln)
-            continue
-        if HR_LINE_RE.match(ln) and (not out or out[-1].strip() == ""):
-            stats["hr_removed"] += 1
-            continue
-        m = H1_LINE_RE.match(ln)
-        if m:
-            stats["h1_demoted"] += 1
-            ln = "## " + m.group(1)
-        if HEADING_RE2.match(ln):
-            if out and out[-1].strip() != "":
-                out.append("")
-                stats["heading_blanks"] += 1
-            pending_blank = True
-        if ":\\" in ln:
-            ln = _wrap_win_paths(ln, stats)
-        if "[^" in ln:
-            new = FOOTNOTE_RE.sub(lambda x: f"[^{stem}-{x.group(1)}]", ln)
-            if new != ln:
-                stats["footnotes"] += 1
-                ln = new
-        scan = INLINE_CODE_RE.sub("", ln)
-        stats["html_warn"].extend(RAW_HTML_RE.findall(scan))
-        stats["extimg_warn"].extend(EXT_IMG_RE.findall(scan))
-        out.append(ln)
-    return "\n".join(out)
-
-
-def _clean_text_output(text: str, truncate: bool = True) -> str:
-    text = ANSI_RE.sub("", text)
-    lines = [seg.split("\r")[-1] for seg in text.split("\n")]
-    lines = [
-        ln for ln in lines
-        if not any(p in ln for p in SKIP_PATTERNS)
-        and not ln.strip().startswith("from .autonotebook import tqdm")
-        and not TQDM_BAR_RE.search(ln)
-    ]
-    while lines and not lines[0].strip():
-        lines.pop(0)
-    while lines and not lines[-1].strip():
-        lines.pop()
-    if truncate:
-        lines = _truncate_long_lines(lines)
-    if len(lines) > MAX_OUTPUT_LINES:
-        lines = lines[: MAX_OUTPUT_LINES - 1] + [
-            f"... (출력 {len(lines) - MAX_OUTPUT_LINES + 1}줄 생략) ..."
-        ]
-    text = "\n".join(lines)
-    if len(text) > MAX_OUTPUT_CHARS:
-        text = text[: MAX_OUTPUT_CHARS - 4].rstrip() + "\n..."
-    return text
-
-
 # --------------------------------------------------------------------------- #
-# HTML 표 → 텍스트 표
+# 셀 출력 렌더링 (노트북 고유)
 # --------------------------------------------------------------------------- #
-class _PandasTableParser(HTMLParser):
-    def __init__(self) -> None:
-        super().__init__()
-        self.tables: list[dict[str, list]] = []
-        self.in_table = self.in_row = self.in_cell = False
-        self.cell_is_header = False
-        self.current_cell: list[str] = []
-        self.current_row: list[tuple[bool, str]] = []
-
-    def handle_starttag(self, tag, attrs):
-        if tag == "table":
-            self.in_table = True
-            self.tables.append({"headers": [], "rows": []})
-        elif self.in_table and tag == "tr":
-            self.in_row = True
-            self.current_row = []
-        elif self.in_table and self.in_row and tag in {"th", "td"}:
-            self.in_cell = True
-            self.cell_is_header = tag == "th"
-            self.current_cell = []
-        elif self.in_cell and tag == "br":
-            self.current_cell.append(" ")
-
-    def handle_endtag(self, tag):
-        if tag in {"th", "td"} and self.in_cell:
-            text = unescape("".join(self.current_cell))
-            text = re.sub(r"\s+", " ", text).strip()
-            self.current_row.append((self.cell_is_header, text))
-            self.in_cell = False
-            self.current_cell = []
-        elif tag == "tr" and self.in_row:
-            if self.current_row and self.tables:
-                values = [v for _, v in self.current_row]
-                header_count = sum(1 for is_h, _ in self.current_row if is_h)
-                data_count = len(self.current_row) - header_count
-                table = self.tables[-1]
-                if header_count >= data_count:
-                    table["headers"] = values
-                else:
-                    table["rows"].append(values)
-            self.in_row = False
-            self.current_row = []
-        elif tag == "table":
-            self.in_table = False
-
-    def handle_data(self, data):
-        if self.in_cell:
-            self.current_cell.append(data)
-
-
-def _html_tables_to_text(html: str) -> list[str]:
-    parser = _PandasTableParser()
-    parser.feed(html)
-    out: list[str] = []
-    for table in parser.tables:
-        headers, rows = table["headers"], table["rows"]
-        if not rows:
-            continue
-        width = max([len(headers)] + [len(r) for r in rows])
-        headers = (headers + [""] * width)[:width] if headers else [""] * width
-        shown = [(r + [""] * width)[:width] for r in rows[:30]]
-        grid = [headers] + shown
-        colw = [max(len(str(row[c])) for row in grid) for c in range(width)]
-        def fmt(row): return "  ".join(str(row[c]).ljust(colw[c]) for c in range(width)).rstrip()
-        lines = [fmt(headers)] + [fmt(r) for r in shown]
-        if len(rows) > 30:
-            lines.append("...")
-        out.append("\n".join(lines))
-    return out
-
-
-# --------------------------------------------------------------------------- #
-# 셀 출력 렌더링
-# --------------------------------------------------------------------------- #
-# 출력 박스 표현: code(기본, 웹·PDF·EPUB 모두 안전) — 실측상 세 타깃 모두 만족하는 건 code 뿐.
-OUTPUT_STYLES = ("code", "html-box")
-DEFAULT_OUTPUT_STYLE = "code"
-OUTPUT_PRE_STYLE = (
-    "background:#eef3fb;border-left:4px solid #5B8DEF;"
-    "padding:0.7em 1em;border-radius:4px;overflow-x:auto;"
-    "font-size:0.92em;line-height:1.45;"
-)
-
-
-def _html_escape(text: str) -> str:
-    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-
-def _output_box(text: str, style: str) -> str:
-    if style == "html-box":
-        return f'<pre style="{OUTPUT_PRE_STYLE}">{_html_escape(text)}</pre>'
-    fence = "```"
-    while fence in text:
-        fence += "`"
-    return f"{fence}text\n{text}\n{fence}"
-
-
 def _render_outputs(cell: dict, assets_dir: Path | None, stem: str, counter: list[int],
                     label: str, style: str = DEFAULT_OUTPUT_STYLE, truncate: bool = True) -> str:
     items: list[tuple[str, str]] = []
@@ -444,7 +160,7 @@ def chapter_h1_title(nb: dict) -> str:
 
 
 # --------------------------------------------------------------------------- #
-# 변환
+# 변환 (노트북)
 # --------------------------------------------------------------------------- #
 def _convert_structural(nb: dict, num: int | None, title: str, stem: str,
                         pages_dir: Path, assets_dir: Path | None, labels: dict,
@@ -644,97 +360,6 @@ def convert(nb: dict, num: int | None, name: str, slug: str, title: str,
         toc_entries.append((f"{prefix}{t}", f"pages/{stem}-{sl}.md"))
 
     return toc_entries, stats
-
-
-# --------------------------------------------------------------------------- #
-# TOC
-# --------------------------------------------------------------------------- #
-TOC_LINK_RE = re.compile(r"^\s*[*-]\s*\[[^\]]*\]\(([^)]+)\)\s*$")
-
-
-def _prune_dead_toc_links(lines: list[str], toc_dir: Path) -> tuple[list[str], list[str]]:
-    """TOC 리스트 항목 중 '없는 로컬 .md 페이지' 를 가리키는 줄을 제거한다.
-
-    외부 URL(`://`)·앵커(`#…`)·`.md` 가 아닌 링크는 그대로 둔다. (kept_lines, removed_targets) 반환.
-    """
-    kept: list[str] = []
-    removed: list[str] = []
-    for ln in lines:
-        m = TOC_LINK_RE.match(ln)
-        if m:
-            target = m.group(1).strip()
-            path_part = target.split("#", 1)[0]
-            is_local_md = (
-                path_part.endswith(".md")
-                and "://" not in target
-                and not target.startswith("#")
-            )
-            if is_local_md and not (toc_dir / path_part).exists():
-                removed.append(path_part)
-                continue
-        kept.append(ln)
-    return kept, removed
-
-
-def upsert_toc(toc_path: Path, book_title: str, num: int | None, name: str,
-               entries: list[tuple[str, str]]) -> None:
-    """TOC.md 에서 이 항목 블록만 교체/추가. 번호가 있으면 NN. / NN-N. 블록을 키로 쓴다.
-
-    더불어 없는 로컬 `.md` 페이지를 가리키는 죽은 링크 줄은 정리한다.
-    """
-    new_lines = []
-    for title, path in entries:
-        indent = "" if (num is None or re.match(r"^\d+\.\s", title)) else "  "
-        new_lines.append(f"{indent}* [{title}]({path})")
-
-    if not toc_path.exists():
-        toc_path.write_text(f"# {book_title}\n\n" + "\n".join(new_lines) + "\n", encoding="utf-8")
-        return
-
-    lines = toc_path.read_text(encoding="utf-8").splitlines()
-
-    if num is None:
-        # 번호 없는 항목: 같은 첫 링크 경로가 이미 있으면 그 블록 교체, 없으면 끝에 추가.
-        first_path = entries[0][1]
-        anchor = re.compile(rf"^\s*\*\s*\[[^\]]*\]\({re.escape(first_path)}\)")
-        idx = next((i for i, ln in enumerate(lines) if anchor.match(ln)), None)
-        if idx is None:
-            out = lines + new_lines
-        else:
-            # 이 블록(들여쓰기 절 포함)을 한 덩어리로 보고 교체: 다음 최상위 항목 전까지.
-            end = idx + 1
-            while end < len(lines) and (lines[end].startswith("  ") or lines[end].strip() == ""):
-                end += 1
-            out = lines[:idx] + new_lines + lines[end:]
-        out, removed = _prune_dead_toc_links(out, toc_path.parent)
-        if removed:
-            print(f"     TOC 정리: 없는 페이지 링크 {len(removed)}건 제거 ({', '.join(removed)})")
-        toc_path.write_text("\n".join(out).rstrip("\n") + "\n", encoding="utf-8")
-        return
-
-    nn = f"{num:02d}"
-    chapter_re = re.compile(rf"^\s*\*\s*\[{nn}[.\-]")
-    start = end = None
-    for i, ln in enumerate(lines):
-        if chapter_re.match(ln):
-            if start is None:
-                start = i
-            end = i
-    if start is None:
-        insert_at = len(lines)
-        any_chapter = re.compile(r"^\s*\*\s*\[(\d{2})[.\-]")
-        for i, ln in enumerate(lines):
-            m = any_chapter.match(ln)
-            if m and int(m.group(1)) > num:
-                insert_at = i
-                break
-        out = lines[:insert_at] + new_lines + lines[insert_at:]
-    else:
-        out = lines[:start] + new_lines + lines[end + 1:]
-    out, removed = _prune_dead_toc_links(out, toc_path.parent)
-    if removed:
-        print(f"     TOC 정리: 없는 페이지 링크 {len(removed)}건 제거 ({', '.join(removed)})")
-    toc_path.write_text("\n".join(out).rstrip("\n") + "\n", encoding="utf-8")
 
 
 # --------------------------------------------------------------------------- #
